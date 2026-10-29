@@ -2,13 +2,7 @@ import type {ReactNode} from 'react';
 import type {DocumentRecord, Note, Flashcard} from '../../api';
 import {chapterKey} from '../../chapters';
 import {SummaryContent} from '../../StructuredContent';
-import {useOverview} from './useOverview';
-function describeTaskError(message: string): string {
-  if (/peer closed connection|incomplete chunked read/i.test(message)) return '模型连接提前中断，回答未完整接收。已完成分块已保留，请在任务中心重新执行。';
-  if (/request burst|traffic growth|RequestBurstTooFast/i.test(message)) return '模型服务触发请求突增保护，需要等待冷却。已完成分块保留，请稍后重新执行，避免连续点击重试。';
-  return message;
-}
-
+import {describeTaskError, useOverview} from './useOverview';
 type Props = {model: ReturnType<typeof useOverview>; activeDocument: DocumentRecord; activeProfile: string; currentPage: number; notes: Note[]; flashcards: Flashcard[]; goBack: () => void; enterReader: (document?: DocumentRecord | null, page?: number) => void; openMemory: () => void; header: ReactNode; settings: ReactNode};
 export function OverviewWorkspace({model, activeDocument, activeProfile, currentPage, notes, flashcards, goBack, enterReader, openMemory, header, settings}: Props) {
   const {importGapSummary, importLearningStructureFile, chapters, chaptersLoading, selectedChapterIndex, setSelectedChapterIndex, summaryGaps, chapterSummaryBusy, chapterSummaryProgress, chapterSummaryDraft, chapterSummaryError, setChapterSummaryError, structureImportStatus, bookGenerationState, generationScope, summarySelection, setSummarySelection, traceLocations, setTraceLocations, traceLoading, traceError, setTraceError, structureFileInput, gapFileInput, gapImportTarget, captureSummarySelection, findSummarySources, openTraceLocation, renderSummaryText, selectedChapter, selectedChapterKey, requestedChapterEndPage, chapterChildren, chapterKind, selectedChapterSummary, selectedChapterGenerated, selectedChapterTask, selectedChapterTaskStopped, bookSummaryKey, bookSummary, chapterNotes, chapterFlashcards, generateChapterStructure, generateBookStructure, pauseBookStructure, cancelBookStructure} = model;

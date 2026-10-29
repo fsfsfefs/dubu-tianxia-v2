@@ -21,16 +21,9 @@ type BookGenerationState = 'idle' | 'running' | 'pausing' | 'paused' | 'cancelle
 type BookGenerationTask = {mode: 'running' | 'paused' | 'cancelled'; controller: AbortController};
 type SummarySelection = {text: string; summary: ChapterSummary};
 type ReturnedSummarySelection = {text: string; summaryKey: string};
-function ensureBookGenerationActive(task?: BookGenerationTask) {
-  if (!task) return;
-  if (task.mode === 'cancelled' || task.controller.signal.aborted) {
-    throw new DOMException('全书结构生成已取消', 'AbortError');
-  }
-  if (task.mode === 'paused') {
-    const error = new Error('全书结构生成已暂停');
-    error.name = 'BookGenerationPaused';
-    throw error;
-  }
+function ensureBookGenerationActive(task: BookGenerationTask) {
+  if (task.mode === 'paused') throw new Error('原文准备已暂停，已完成页面保留。');
+  if (task.mode === 'cancelled' || task.controller.signal.aborted) throw new DOMException('全书结构生成已取消', 'AbortError');
 }
 
 type Options = {activeDocument: DocumentRecord | null; activeProfile: string; currentPage: number; screen: string; backgroundTasks: BackgroundTask[]; setBackgroundTasks: React.Dispatch<React.SetStateAction<BackgroundTask[]>>; setTaskCenterOpen: (value: boolean) => void; setError: (message: string) => void; notes: Note[]; flashcards: Flashcard[]; enterReader: (document?: DocumentRecord | null, page?: number) => void; goBack: () => void; refreshTasksNow: () => Promise<void>; cancelTask: (id: string) => Promise<void>};
@@ -286,15 +279,22 @@ export function useOverview({activeDocument, activeProfile, currentPage, screen,
       ), task.controller.signal);
       if (!valid()) return;
       ensureBookGenerationActive(task);
-      const queued = await createSummaryTask(activeDocument.id, activeProfile, chapters.map(({title, page, depth}) => ({title, page, depth})), chapterIndex);
+      let queued = await createSummaryTask(activeDocument.id, activeProfile, chapters.map(({title, page, depth}) => ({title, page, depth})), chapterIndex);
+      if (task.mode === 'cancelled') {
+        await cancelTask(queued.id);
+        if (valid()) {setChapterSummaryBusy(''); setBookGenerationState('cancelled'); setChapterSummaryProgress('已取消；已完成页面保留。');}
+        return;
+      }
+      if (task.mode === 'paused') queued = await pauseSummaryTask(queued.id);
       setBackgroundTasks(items => [queued, ...items.filter(item => item.id !== queued.id)]);
       if (!valid()) return;
-      setChapterSummaryProgress('已提交后台生成，可在任务中心查看进度。');
+      if (task.mode === 'paused') {setChapterSummaryBusy(''); setBookGenerationState('paused');}
+      setChapterSummaryProgress(task.mode === 'paused' ? '已暂停；已完成分块保留。' : '已提交后台生成，可在任务中心查看进度。');
       setTaskCenterOpen(true);
     } catch (reason) {
       if (!valid()) return;
       setChapterSummaryError(reason instanceof Error ? reason.message : '总结任务提交失败');
-      setChapterSummaryBusy(''); setBookGenerationState('idle');
+      setChapterSummaryBusy(''); setBookGenerationState(task.mode === 'paused' ? 'paused' : task.mode === 'cancelled' ? 'cancelled' : 'idle');
     } finally {
       if (bookGenerationTask.current === task) bookGenerationTask.current = null;
     }
@@ -302,16 +302,15 @@ export function useOverview({activeDocument, activeProfile, currentPage, screen,
   const generateChapterStructure = () => startSummaryTask(selectedChapterIndex);
   const generateBookStructure = () => startSummaryTask(null);
   const pauseBookStructure = async () => {
+    if (bookGenerationTask.current) {bookGenerationTask.current.mode = 'paused'; bookGenerationTask.current.controller.abort(); return;}
     if (currentSummaryTask) {
       try { await pauseSummaryTask(currentSummaryTask.id); await refreshTasksNow(); }
       catch (reason) { setError(reason instanceof Error ? reason.message : '暂停失败'); }
-    } else if (bookGenerationTask.current) {
-      bookGenerationTask.current.controller.abort();
     }
   };
   const cancelBookStructure = async () => {
+    if (bookGenerationTask.current) {bookGenerationTask.current.mode = 'cancelled'; bookGenerationTask.current.controller.abort(); return;}
     if (currentSummaryTask) await cancelTask(currentSummaryTask.id);
-    else bookGenerationTask.current?.controller.abort();
   };
   return {importGapSummary, importLearningStructureFile, chapters, setChapters, chaptersLoading, setChaptersLoading, selectedChapterIndex, setSelectedChapterIndex, chapterSummaries, setChapterSummaries, summaryGaps, setSummaryGaps, chapterSummaryBusy, setChapterSummaryBusy, chapterSummaryProgress, setChapterSummaryProgress, chapterSummaryDraft, setChapterSummaryDraft, chapterSummaryError, setChapterSummaryError, structureImportStatus, setStructureImportStatus, bookGenerationState, setBookGenerationState, generationScope, setGenerationScope, generationTargetKey, setGenerationTargetKey, summarySelection, setSummarySelection, traceLocations, setTraceLocations, traceLoading, setTraceLoading, traceError, setTraceError, sourceTrace, setSourceTrace, returnedSummarySelection, setReturnedSummarySelection, structureFileInput, gapFileInput, gapImportTarget, bookGenerationTask, captureSummarySelection, findSummarySources, openTraceLocation, returnToSelectedSummary, renderSummaryText, chapterPlan, selectedChapter, selectedChapterKey, selectedPlan, requestedChapterEndPage, chapterChildren, chapterKind, selectedChapterSummary, selectedChapterGenerated, selectedChapterTask, selectedChapterTaskStopped, bookSummaryKey, bookSummary, nextChapterPage, chapterNotes, chapterFlashcards, currentSummaryTask, startSummaryTask, generateChapterStructure, generateBookStructure, pauseBookStructure, cancelBookStructure};
 }

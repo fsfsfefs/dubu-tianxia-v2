@@ -1,7 +1,7 @@
 import postcss from 'postcss';
 import {createHash} from 'node:crypto';
 export function cascadeDigest(sheets){
- const trees=sheets.map(css=>postcss.parse(css));
+ const trees=sheets.map(css=>postcss.parse(css.replace(/\r\n?/g,'\n')));
  for(const tree of trees)tree.walkRules(rule=>{rule.selector=rule.selector.replace(/:where\(\[data-feature="[^"]+"\]\)\s*/g,'');});
  const later=new Map();
  for(const tree of [...trees].reverse()){

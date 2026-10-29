@@ -101,3 +101,15 @@ test('summary polling begun before an import cannot overwrite its committed resu
  await act(async()=>{pending.resolve(response({summaries:[{content:'stale poll'}]}));});
  assert.equal(hook.result.current.chapterSummaries[0].content,'new');
 });
+
+test('cancel clicked while task submission is in flight also cancels the server task once identified',async()=>{
+ const queued=deferred(); const cancelled=[];
+ globalThis.fetch=async url=>String(url)==='/api/tasks/summary'?queued.promise:empty();
+ const hook=renderHook(()=>useOverview({...options(A),cancelTask:async id=>{cancelled.push(id);}},dependencies));
+ act(()=>hook.result.current.setChapters([{title:'first',page:1,depth:0}]));let request;
+ await act(async()=>{request=hook.result.current.startSummaryTask(null);await Promise.resolve();});
+ await act(async()=>{await hook.result.current.cancelBookStructure();});
+ await act(async()=>{queued.resolve(response({task:{id:'just-submitted'}}));await request;});
+ assert.deepEqual(cancelled,['just-submitted']);
+ assert.equal(hook.result.current.chapterSummaryBusy,'');
+});
