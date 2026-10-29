@@ -90,7 +90,7 @@ test('workspace navigation remembers books and explicit page jumps without reloa
 });
 
 test('panel resizing removes global pointer listeners and body state on unmount',()=>{
- const hook=renderHook(()=>usePanelLayout());act(()=>hook.result.current.beginPanelResize({button:0,preventDefault(){},clientX:500,clientY:20},'assistant'));assert.ok(document.body.classList.contains('panel-resizing'));hook.unmount();assert.equal(document.body.classList.contains('panel-resizing'),false);
+ const hook=renderHook(()=>usePanelLayout());act(()=>hook.result.current.beginPanelResize({button:0,preventDefault(){},clientX:500,clientY:20},'assistant'));assert.ok(document.body.classList.contains('panel-resizing'));act(()=>hook.result.current.beginPanelResize({button:0,preventDefault(){},clientX:450,clientY:20},'excerpt'));assert.ok(document.body.classList.contains('panel-resizing'));hook.unmount();assert.equal(document.body.classList.contains('panel-resizing'),false);
 });
 
 test('summary polling begun before an import cannot overwrite its committed results',async()=>{

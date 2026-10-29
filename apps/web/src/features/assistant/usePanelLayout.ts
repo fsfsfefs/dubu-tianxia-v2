@@ -36,6 +36,7 @@ export function usePanelLayout() {
 
   const beginPanelResize = (event: React.PointerEvent<HTMLDivElement>, panel: 'assistant' | 'excerpt' | 'composer') => {
     if (event.button !== 0) return;
+    cleanup.current?.();
     event.preventDefault();
     const startX = event.clientX;
     const startY = event.clientY;
@@ -58,7 +59,7 @@ export function usePanelLayout() {
       window.removeEventListener('pointerup', onEnd);
       window.removeEventListener('pointercancel', onEnd);
     };
-    cleanup.current?.(); cleanup.current = onEnd;
+    cleanup.current = onEnd;
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onEnd);
     window.addEventListener('pointercancel', onEnd);

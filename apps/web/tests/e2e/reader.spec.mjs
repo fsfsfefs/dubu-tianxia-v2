@@ -5,9 +5,12 @@ async function openBook(page,title){
  await page.locator('.library-book').filter({hasText:title}).getByRole('button',{name:/打开教材/}).click();
  await page.getByRole('button',{name:/继续 PDF/}).click();
  await expect(page.locator('.continuous-page canvas').first()).toBeVisible();
+ // Each scenario starts on an explicit page, independently of another project's saved reading position.
+ await page.locator('.page-controls input').fill('1');
+ await expect(page.locator('.continuous-page').first()).toBeInViewport({ratio:.7});
 }
 async function stroke(page,project){
- const layer=page.locator('.annotation-layer').first();await expect(layer).toBeVisible();
+ const layer=page.locator('.annotation-layer').first();await expect(layer).toBeInViewport({ratio:.7});
  const box=await layer.boundingBox();const x=box.x+box.width*.25,y=box.y+box.height*.3;
  if(project==='touch'){
   const client=await page.context().newCDPSession(page);
