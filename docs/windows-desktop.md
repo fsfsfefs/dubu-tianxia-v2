@@ -36,7 +36,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build-windows.ps1
 
 脚本在 `.tmp/desktop-venv` 创建独立环境，按 `desktop/requirements-win-py312.lock` 安装固定版本，构建前端并用 PyInstaller 打包。`dist/windows` 包含完整目录、分发 ZIP、SHA256 和依赖许可声明。输入仅限程序、前端及明确列出的 OCR 资源，不读取 `.data`；产物和依赖不进入 Git。
 
-环境已准备时可加 `-SkipInstall`，仍检查锁并重新构建。主入口为 `apps/api/reader_next_api/desktop.py`，开发运行可用打包环境 Python 执行 `desktop/launcher.py`。
+环境已准备时可加 `-SkipInstall`，仍检查锁并重新构建。`-OutputDirectory dist/windows-release` 可生成另一份输出，避开正在运行的旧EXE；输出必须在项目目录内。主入口为 `apps/api/reader_next_api/desktop.py`，开发运行可用打包环境 Python 执行 `desktop/launcher.py`。窗口默认最大化，可还原或缩放。
 
 隔离验收（真实原生窗口，自动退出，不访问正式数据）：
 

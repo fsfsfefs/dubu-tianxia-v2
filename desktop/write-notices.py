@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-output = root / 'dist/windows/DubuTianxia/THIRD-PARTY-NOTICES.txt'
+output_root = Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'dist/windows'
+output = output_root / 'DubuTianxia/THIRD-PARTY-NOTICES.txt'
 sections = ['读步天下第二版 - third-party dependency notices', 'Python runtime: https://docs.python.org/3/license.html']
 python_license = Path(sys.base_prefix) / 'LICENSE.txt'
 if not python_license.is_file():

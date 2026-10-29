@@ -1,4 +1,4 @@
-param([switch]$SkipInstall)
+param([switch]$SkipInstall, [string]$OutputDirectory = 'dist/windows')
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $buildPython = Join-Path $PSScriptRoot '.tmp/desktop-venv/Scripts/python.exe'
@@ -10,6 +10,9 @@ $env:PIP_CACHE_DIR = Join-Path $PSScriptRoot '.tmp/pip-cache'
 $env:PYINSTALLER_CONFIG_DIR = Join-Path $PSScriptRoot '.tmp/desktop-cache'
 $env:PYTHONUTF8 = '1'
 $env:HF_HOME = Join-Path $PSScriptRoot '.tmp/desktop-hf-cache'
+$outputRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $OutputDirectory))
+$workspacePrefix = $PSScriptRoot.TrimEnd('\') + '\'
+if (-not $outputRoot.StartsWith($workspacePrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Output must stay inside this workspace.' }
 if (-not $SkipInstall) {
     if (-not (Test-Path -LiteralPath $buildPython)) {
         py -3.12 -m venv .tmp/desktop-venv
@@ -26,12 +29,12 @@ if (-not $SkipInstall) {
 if ($LASTEXITCODE -ne 0) { throw 'Python lock check failed.' }
 Push-Location apps/web
 try { npm.cmd run build; if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' } } finally { Pop-Location }
-& $buildPython -m PyInstaller --noconfirm --clean --distpath dist/windows --workpath .tmp/desktop-build desktop/DubuTianxia.spec
+& $buildPython -m PyInstaller --noconfirm --distpath $outputRoot --workpath .tmp/desktop-build desktop/DubuTianxia.spec
 if ($LASTEXITCODE -ne 0) { throw 'EXE packaging failed.' }
-Copy-Item -LiteralPath docs/windows-desktop.md -Destination dist/windows/DubuTianxia/README.zh-CN.md
-& $buildPython desktop/write-notices.py
+Copy-Item -LiteralPath docs/windows-desktop.md -Destination (Join-Path $outputRoot 'DubuTianxia/README.zh-CN.md')
+& $buildPython desktop/write-notices.py $outputRoot
 if ($LASTEXITCODE -ne 0) { throw 'License inventory failed.' }
-Compress-Archive -LiteralPath dist/windows/DubuTianxia -DestinationPath dist/windows/DubuTianxia-Windows-x64.zip -Force
-Get-FileHash -Algorithm SHA256 -LiteralPath dist/windows/DubuTianxia-Windows-x64.zip |
-    Format-List | Out-File -Encoding utf8 dist/windows/SHA256.txt
-Write-Host 'Ready: dist/windows/DubuTianxia/DubuTianxia.exe'
+Compress-Archive -LiteralPath (Join-Path $outputRoot 'DubuTianxia') -DestinationPath (Join-Path $outputRoot 'DubuTianxia-Windows-x64.zip') -Force
+Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $outputRoot 'DubuTianxia-Windows-x64.zip') |
+    Format-List | Out-File -Encoding utf8 (Join-Path $outputRoot 'SHA256.txt')
+Write-Host "Ready: $outputRoot/DubuTianxia/DubuTianxia.exe"

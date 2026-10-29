@@ -149,7 +149,7 @@ def run(args):
             webview.settings['ALLOW_DOWNLOADS'] = True
             webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
             window = webview.create_window('读步天下 · 第二版', f'{origin}/desktop-start/{token}',
-                width=1440, height=960, min_size=(800, 600), text_select=True,
+                width=1100, height=640, maximized=True, min_size=(800, 600), text_select=True,
                 confirm_close=not args.smoke_test, background_color='#f7f6ef')
             result = {}
 
