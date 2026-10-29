@@ -41,6 +41,7 @@ export type ReaderProps = {
   onAiAssist?: (text: string, action: 'explain' | 'summary' | 'questions' | 'connect') => void;
   onPageChange?: (page: number) => void;
   onBack?: () => void;
+  onOpenGuide?: () => void;
   onAssistantToggle?: () => void;
   assistantOpen?: boolean;
   notes?: Note[];

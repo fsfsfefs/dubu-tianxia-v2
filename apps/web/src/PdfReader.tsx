@@ -16,7 +16,7 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 import {PdfThumbnail, ContinuousPdfPage, INK_TAG} from './PdfPages';
 import type {SelectionState, OutlineEntry, PageRegion, ReaderProps} from './PdfPages';
 export type {SourceTraceLocation, SourceTraceNavigation} from './PdfPages';
-export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onPageChange, onBack, onAssistantToggle, assistantOpen, notes = [], onCreatePageNote, onUpdatePageNote, onDeletePageNote, targetPage, targetPageRevision = 0, restoreLastPosition = true, sourceTrace, onSourceTraceNavigate, onSourceTraceReturn, onSourceTraceClose}: ReaderProps) {
+export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onPageChange, onBack, onOpenGuide, onAssistantToggle, assistantOpen, notes = [], onCreatePageNote, onUpdatePageNote, onDeletePageNote, targetPage, targetPageRevision = 0, restoreLastPosition = true, sourceTrace, onSourceTraceNavigate, onSourceTraceReturn, onSourceTraceClose}: ReaderProps) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [initialPageDimensions, setInitialPageDimensions] = useState({width: 595, height: 842});
   const [pageNumber, setPageNumber] = useState(() => targetPage || 1);
@@ -372,6 +372,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         <button className={notePanelOpen ? 'active' : ''} aria-expanded={notePanelOpen} title="页边便签" onClick={() => setNotePanelOpen(value => !value)}><span className="tool-icon" aria-hidden="true">▤</span><span>便签</span>{pageNotes.length ? <sup>{pageNotes.length}</sup> : null}</button>
         <button className={highlightOpen ? 'active' : ''} aria-expanded={highlightOpen} title="高亮管理" aria-label="高亮管理" onClick={() => setHighlightOpen(value => !value)}><span className="tool-icon" aria-hidden="true">★</span>{managedHighlights.length ? <sup>{managedHighlights.length}</sup> : null}</button>
         {onAssistantToggle && <button className={assistantOpen ? 'active' : ''} aria-expanded={assistantOpen} onClick={onAssistantToggle}><span className="tool-icon assistant-icon" aria-hidden="true">◇</span><span>{assistantOpen ? '收起助读' : 'AI助读'}</span></button>}
+        {onOpenGuide && <button aria-label="使用指南" title="使用指南" onClick={onOpenGuide}><span className="tool-icon" aria-hidden="true">?</span></button>}
         <details className="reader-more" open={displayOpen} onToggle={event => setDisplayOpen(event.currentTarget.open)}><summary title="更多阅读工具">···</summary><div>
           <button onClick={() => setZoom(value => Math.max(.5, +(value - .1).toFixed(1)))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(value => Math.min(3, +(value + .1).toFixed(1)))}>＋</button>
           <button onClick={() => setZoom(1)}>适应宽度</button><label><input type="checkbox" checked={paperTone} onChange={event => setPaperTone(event.target.checked)}/>柔和纸色</label>

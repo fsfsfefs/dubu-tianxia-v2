@@ -11,7 +11,7 @@ function visit(key) {
   for (const imported of manifest[key].imports || []) visit(imported);
 }
 visit('index.html');
-for (const feature of ['src/PdfReader.tsx', 'src/pdfOutline.ts', 'src/ragIndex.ts', 'src/chapterSummary.ts']) {
+for (const feature of ['src/features/guide/GuideEntry.tsx', 'src/PdfReader.tsx', 'src/pdfOutline.ts', 'src/ragIndex.ts', 'src/chapterSummary.ts']) {
   assert.ok(manifest[feature]?.isDynamicEntry, `${feature} must remain independently loadable`);
   assert.ok(!initial.has(feature), `${feature} must not be loaded by the home page`);
 }

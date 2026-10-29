@@ -1,0 +1,36 @@
+.user-guide {width:min(1160px,calc(100vw - 40px));height:min(860px,calc(100dvh - 40px));max-width:none;max-height:none;padding:0;border:1px solid #b5c4b2;background:#f8f7f1;color:#273b2e;box-shadow:0 24px 100px #17271e40;box-sizing:border-box;font:14px/1.75 var(--font-ui);overflow:hidden}
+.user-guide[open] {display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+.user-guide::backdrop {background:#1c2d2459}
+.user-guide .user-guide-header {display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:25px 30px 19px;border-bottom:1px solid #d2dbce}
+.user-guide .user-guide-header small {color:#6d7f70;font-size:10px;letter-spacing:.16em}
+.user-guide h1 {margin:3px 0 6px;color:#31543e;font:500 31px/1.4 var(--font-editorial)}
+.user-guide .user-guide-header p {margin:0;color:#6a796b;font-size:12px}
+.user-guide .user-guide-actions {display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.user-guide button {border:1px solid #afc0aa;background:#edf3e9;color:#35563f;padding:8px 12px;cursor:pointer;font:inherit;line-height:1.5}
+.user-guide button:hover {background:#dfead9}
+.user-guide .user-guide-close {background:#f8faf5;white-space:nowrap}
+.user-guide .user-guide-search {display:flex;align-items:center;gap:12px;padding:14px 30px;border-bottom:1px solid #d2dbce;background:#f1f4ec}
+.user-guide .user-guide-search label {flex-shrink:0;color:#47634b;font-weight:600;font-size:12px}
+.user-guide .user-guide-search input {width:100%;min-width:0;max-width:580px;padding:9px 12px;border:1px solid #b8c6b1;border-radius:0;background:#fffefa;color:#293e30;font:inherit;font-size:13px}
+.user-guide .user-guide-search input::placeholder {color:#73816f}
+.user-guide .user-guide-search>span {margin-left:auto;white-space:nowrap;color:#6c7d6c;font-size:12px}
+.user-guide .user-guide-layout {display:grid;grid-template-columns:240px minmax(0,1fr);min-height:0}
+.user-guide .user-guide-toc {overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:21px 13px 28px 20px;border-right:1px solid #d2dbce;background:#f0f3eb}
+.user-guide .user-guide-toc p {margin:0 9px 12px;color:#778371;font-size:11px;letter-spacing:.06em}
+.user-guide .user-guide-toc a {display:block;padding:9px 10px;margin:2px 0;color:#46614b;text-decoration:none;line-height:1.65;font-size:12px;border-left:2px solid transparent;overflow-wrap:anywhere}
+.user-guide .user-guide-toc a:hover,.user-guide .user-guide-toc a:focus-visible {border-left-color:#55785a;background:#e0e9d9;color:#284c34}
+.user-guide .user-guide-content {min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:26px 36px 60px;scroll-padding-top:24px;scrollbar-width:thin;scrollbar-color:#a6b6a1 transparent}
+.user-guide .user-guide-introduction {margin:0 0 28px;padding-bottom:22px;border-bottom:1px solid #dbe2d5;color:#667760;white-space:pre-line}
+.user-guide .user-guide-content section {margin:0 0 40px;padding-bottom:28px;border-bottom:1px solid #dbe2d5}
+.user-guide h2 {margin:0 0 20px;color:#31543e;font:500 24px/1.5 var(--font-editorial);scroll-margin-top:24px}
+.user-guide h3 {margin:23px 0 8px;color:#4c6d50;font-size:13px;font-weight:700;letter-spacing:.02em}
+.user-guide p {margin:8px 0 14px;line-height:1.9;overflow-wrap:anywhere}
+.user-guide ul,.user-guide ol {margin:8px 0 18px;padding-left:22px}
+.user-guide li {padding-left:3px;margin:9px 0;line-height:1.9;overflow-wrap:anywhere}
+.user-guide pre {padding:15px 18px;border:1px solid #d0dcc8;background:#eaf0e4;overflow:auto;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.user-guide code {font-family:Consolas,monospace}
+.user-guide .user-guide-empty {padding:55px 0;text-align:center;color:#71816b}
+.user-guide :focus-visible {outline:2px solid #567d57;outline-offset:3px}
+.user-guide h2:focus {outline:none}
+@media(max-width:720px) {.user-guide {width:calc(100vw - 16px);height:calc(100dvh - 16px)}.user-guide .user-guide-header {padding:18px;gap:12px}.user-guide h1 {font-size:24px}.user-guide .user-guide-actions {gap:7px}.user-guide .user-guide-actions button {font-size:11px;padding:7px 9px}.user-guide .user-guide-search {gap:8px;padding:11px 18px;flex-wrap:wrap}.user-guide .user-guide-search input {flex:1 1 180px}.user-guide .user-guide-search>span {font-size:11px}.user-guide .user-guide-layout {grid-template-columns:1fr;grid-template-rows:100px minmax(0,1fr)}.user-guide .user-guide-toc {display:flex;align-content:flex-start;gap:5px;flex-wrap:wrap;padding:9px 15px;border-right:0;border-bottom:1px solid #d2dbce;overflow:auto}.user-guide .user-guide-toc p {display:none}.user-guide .user-guide-toc a {padding:5px 8px;margin:0;font-size:11px;border:1px solid #d1dcc9;max-width:100%}.user-guide .user-guide-content {padding:23px 22px 45px}.user-guide h2 {font-size:21px}}
+@media(max-width:420px) {.user-guide .user-guide-header {flex-direction:column}.user-guide .user-guide-actions {width:100%;justify-content:flex-end}.user-guide .user-guide-search label {display:none}}

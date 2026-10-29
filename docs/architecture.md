@@ -4,6 +4,7 @@
 
 | 层 | 模块 | 职责 |
 | --- | --- | --- |
+| 用户指南 | web/src/features/guide/、docs/user-guide.md | 单一Markdown来源、按需模态阅读、目录/搜索/下载；首页与各工作区入口 |
 | 启动 | web/src/main.tsx | 仅挂载React根组件 |
 | 应用装配 | web/src/App.tsx | 装配功能、书架操作与备份入口 |
 | 导航/布局 | web/src/features/workspace/useWorkspaceNavigation.ts、features/assistant/usePanelLayout.ts | 历史回退、教材与指定页、布局持久化与监听释放 |

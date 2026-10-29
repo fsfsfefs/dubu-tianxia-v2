@@ -4,6 +4,8 @@
 GitHub：https://github.com/fsfsfefs/dubu-tianxia-v2；分支main。
 来源为第一版终版，原项目与封存目录不修改。第二版接口端口8790，前端5174；默认.data位于新项目，凭据命名空间reader-next-v2。本机数据副本来自第一版封存包，未复制API Key。
 
+用户初始文档为docs/user-guide.md；首页、顶部和阅读器可打开同源使用指南，内容变更在该文件维护。
+
 接手顺序：AGENTS.md、README.md、docs/features.md、docs/architecture.md、docs/refactoring.md、CHANGELOG.md，再查git status与最近提交。
 运行与验证命令见README。启动数据/任务只能由应用lifespan管理，不在模块导入时访问数据库。
 
