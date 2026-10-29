@@ -7,7 +7,7 @@ GitHub：https://github.com/fsfsfefs/dubu-tianxia-v2；分支main。
 接手顺序：AGENTS.md、README.md、docs/features.md、docs/architecture.md、docs/refactoring.md、CHANGELOG.md，再查git status与最近提交。
 运行与验证命令见README。启动数据/任务只能由应用lifespan管理，不在模块导入时访问数据库。
 
-最近优化：总览、助读、导航/布局、PDF搜索/标注均已有独立模块；总览导入/准备及页面OCR有过期响应保护。数据库使用schema_migrations显式事务迁移，检索编排见RetrievalService。Windows/Python3.12依赖锁与隔离浏览器测试已接入CI。验证命令、范围和当前结果见README及docs/refactoring.md。第一版历史中的宽松安装命令不再作为第二版推荐安装方式。
+最近优化：总览、助读、导航/布局、PDF搜索/标注均已有独立模块；总览导入/准备及页面OCR有过期响应保护。数据库使用schema_migrations显式事务迁移，检索编排见RetrievalService。Windows/Python3.12依赖锁与隔离浏览器测试已接入CI。验证命令、范围和当前结果见README及docs/refactoring.md。第一版历史中的宽松安装命令不再作为第二版推荐安装方式。 最近完整CI记录：后端125项、前端30项、浏览器4项及依赖锁/构建均通过，运行编号40866950396。
 
 旧版交接背景保留如下，仅供历史参考；其中路径、Git状态、端口与模块位置以本文开头及第二版architecture.md为准。
 
