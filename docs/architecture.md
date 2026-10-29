@@ -1,5 +1,7 @@
 # 第二版架构
 
+Windows桌面组合根为`reader_next_api/desktop.py`：复用Runtime和create_app，挂载只读前端产物、指定OCR目录，Edge WebView2同源访问。会话Cookie、Origin/Host检查限制本地API；进程持有数据文件锁直至后端与任务完成退出。数据位于LOCALAPPDATA，程序包与私人数据分开；PyInstaller构建见desktop目录和build-windows.ps1。
+
 ## 功能与模块
 
 | 层 | 模块 | 职责 |

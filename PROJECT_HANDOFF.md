@@ -1,6 +1,8 @@
 # 读步天下第二版交接
 
 当前项目目录：`C:\Users\HUAWEI\Documents\Codex\dubu-tianxia-v2`。
+
+Windows EXE：build-windows.ps1生成dist/windows的免安装目录和ZIP，入口desktop.py/desktop/launcher.py；使用WebView2，固定127.0.0.1:8792，独立数据在LOCALAPPDATA/DubuTianxia/v2/data。默认不访问项目.data，迁移用完整备份恢复，单实例锁只覆盖桌面进程。详见docs/windows-desktop.md。产物与用户数据禁止提交。
 GitHub：https://github.com/fsfsfefs/dubu-tianxia-v2；分支main。
 来源为第一版终版，原项目与封存目录不修改。第二版接口端口8790，前端5174；默认.data位于新项目，凭据命名空间reader-next-v2。本机数据副本来自第一版封存包，未复制API Key。
 

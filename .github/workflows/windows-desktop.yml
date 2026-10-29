@@ -1,0 +1,40 @@
+name: Windows desktop
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['desktop/**', 'apps/**', 'docs/user-guide.md', 'docs/windows-desktop.md', 'build-windows.ps1', 'scripts/check*lock.py', '.github/workflows/windows-desktop.yml']
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: ./build-windows.ps1
+        shell: pwsh
+      - name: Frozen native window smoke test
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD '.tmp/desktop-ci-smoke.json'
+          $data = Join-Path $PWD '.tmp/desktop-ci-user'
+          $p = Start-Process -FilePath dist/windows/DubuTianxia/DubuTianxia.exe -ArgumentList @('--data-dir', $data, '--port', '18792', '--smoke-test', '--smoke-report', $report) -WindowStyle Hidden -PassThru
+          if (-not $p.WaitForExit(60000)) { throw 'Native smoke test timed out.' }
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Native smoke test failed.' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if ($result.error -or -not $result.native_ui -or -not $result.vector_runtime) { throw 'Incomplete native smoke report.' }
+          Get-Content $report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DubuTianxia-Windows-x64
+          path: |
+            dist/windows/*.zip
+            dist/windows/SHA256.txt
+          retention-days: 14
