@@ -7,6 +7,8 @@ GitHub：https://github.com/fsfsfefs/dubu-tianxia-v2；分支main。
 接手顺序：AGENTS.md、README.md、docs/features.md、docs/architecture.md、docs/refactoring.md、CHANGELOG.md，再查git status与最近提交。
 运行与验证命令见README。启动数据/任务只能由应用lifespan管理，不在模块导入时访问数据库。
 
+最近优化：问答/练习卡控制器、书架/练习视图及shared教材访问守卫已拆出，避免旧请求污染新教材；PDF与设置按需加载，构建包含400kB初始JS预算。当前前端18项回归通过，详见docs/refactoring.md。后续优先处理总览协调、PDF标注/搜索及端到端验证。
+
 旧版交接背景保留如下，仅供历史参考；其中路径、Git状态、端口与模块位置以本文开头及第二版architecture.md为准。
 
 ---
@@ -196,7 +198,7 @@ cd apps/api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-前端构建目前可能出现单个 JavaScript chunk 超过 500 kB 的 Vite 警告；构建本身可以成功。若继续优化加载性能，应优先按页面拆分动态 import，而不是删除功能。
+此处为第一版历史：当时入口存在超过500kB提示。第二版已按需拆分，当前加载预算与验证以docs/refactoring.md为准。
 
 ## 8. 当前 Git 与交付状态
 

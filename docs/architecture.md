@@ -6,6 +6,11 @@
 | --- | --- | --- |
 | 启动 | web/src/main.tsx | 仅挂载React根组件 |
 | 应用协调 | web/src/App.tsx | 页面导航、当前教材及功能之间的协调 |
+| 问答状态 | web/src/features/assistant/useConversation.ts | 问答、索引、流式证据、取消及回答身份 |
+| 练习 | web/src/features/practice/ | 卡片控制器、练习视图与浮动题目 |
+| 书架 | web/src/features/library/LibraryHome.tsx | 书架展示、筛选及显式操作回调 |
+| 访问隔离 | web/src/shared/ | 教材访问守卫和学习记录异步加载 |
+| 总结溯源 | web/src/features/summary/sourceTrace.ts | 纯文本来源定位 |
 | 设置 | web/src/features/settings/ModelSettings.tsx | 模型表单、临时连接测试、向量模型管理 |
 | 任务视图 | web/src/features/tasks/TaskCenter.tsx | 接收任务和回调，展示状态及操作 |
 | 笔记状态 | web/src/features/notes/useNotes.ts | 笔记表单、编辑、导出和异步切书保护 |
@@ -37,6 +42,14 @@ MaintenanceMiddleware的访问租约覆盖整个响应，包括SSE和文件流�
 不再把目录下标作为新总结身份。范围键包含祖先标题、本节点及子树标题/页码/深度和下一同级边界页；相同内容范围在无关的前置章节插入后保持同一键，子树或范围变化则失效。
 FNV-1a 64位用于本地内容身份，不是安全校验；归档文件仍使用SHA-256。标题、页码等身份信息变化时保留旧记录，但不自动重用到新范围。键有理论哈希碰撞风险，不应充当跨系统永久UUID。
 第一版位置记录仅在标题、起始页、深度及可确定的结束页一致时迁移；目录替换前依据旧目录迁移，无法确认归属的旧位置记录以legacy前缀保留。
+
+## 前端异步与加载边界
+
+useDocumentScope按访问代次隔离结果；A→B→A也不能接受第一次A的结果。问答同时检查请求所有权和AbortSignal，取消/卸载中止调用，旧finally不能释放新请求的busy。每条回答使用内部Symbol身份，React批量提交的增量更新仍落到对应回答；发送历史时只包含role/content。
+学习数据加载、笔记与卡片共享访问守卫。卡片生成接口暂不可取消，切书后忽略过期结果；这不保证已发送的模型请求停止计费。总览导入等剩余异步流程仍需继续整理。
+
+App通过React.lazy加载阅读器与模型设置；PDF目录、索引、章节文本工具使用动态import，类型引用使用import type。PDF阅读器CSS仍在原始顺序静态导入，避免改变既有全局级联。
+Vite输出manifest，tests/build-budget.mjs遍历入口的静态依赖检查400,000字节预算及动态边界；懒加载资源不计入初始脚本，但仍属于完整应用体积。
 
 ## 样式与测试
 

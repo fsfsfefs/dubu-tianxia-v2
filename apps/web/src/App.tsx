@@ -1,15 +1,19 @@
+import {useDocumentLearningData} from './shared/useDocumentLearningData';
+import {LibraryHome} from './features/library/LibraryHome';
+import {PracticeWorkspace} from './features/practice/PracticeWorkspace';
+import {FloatingQuestion} from './features/practice/FloatingQuestion';
+import {locateSummarySources} from './features/summary/sourceTrace';
+import {useConversation} from './features/assistant/useConversation';
+import {useFlashcards} from './features/practice/useFlashcards';
 import {useNotes} from './features/notes/useNotes';
 import {reconcileOutline} from './api';
 import {TaskCenter} from './features/tasks/TaskCenter';
-import {ModelSettings} from './features/settings/ModelSettings';
+const ModelSettings = lazy(() => import('./features/settings/ModelSettings').then(module => ({default: module.ModelSettings})));
 import {chapterKey, chapterPlan as planChapter} from './chapters';
-import React, {useEffect, useRef, useState} from 'react';
+import React, {lazy, Suspense, useEffect, useRef, useState} from 'react';
 import {
-  ChapterSummary, ChatMessage, CitationVerification, clearChatMessages, createFlashcard, createFolder, createNote, deleteDocument, deleteFlashcard,
-  deleteFolder, DocumentRecord, exportAllData, Flashcard, FolderRecord, generateFlashcards, listChatMessages,
-  listChapterSummaries, listDocuments, listFlashcards, listFolders, listNotes, listOcrPages, listProfiles, ModelProfile, moveDocument, Note, OcrPage, renameDocument, renameFolder,
-  RagSource, RagStatus, reviewFlashcard, saveChapterSummary, streamAnswer, updateFlashcard, uploadDocument, WebSource,
-  } from './api';
+  ChapterSummary, createFolder, deleteDocument, deleteFolder, DocumentRecord, exportAllData, FolderRecord, listChapterSummaries, listDocuments, listFolders, listOcrPages, listProfiles, ModelProfile, moveDocument, renameDocument, renameFolder,
+  saveChapterSummary, uploadDocument, } from './api';
 import {getImportedOutline, importLearningStructure} from './api';
 import {downloadFullBackup, restoreFullBackup} from './api';
 import {BackgroundTask, cancelBackgroundTask, clearFinishedBackgroundTasks, createIndexTasks, listBackgroundTasks, retryBackgroundTask} from './api';
@@ -21,18 +25,19 @@ import './embedding-settings.css';
 import './structure-import.css';
 import './styles/editorial.css';
 import './overview-scroll.css';
-import {PdfReader, SourceTraceLocation, SourceTraceNavigation} from './PdfReader';
+import './pdf-reader.css';
+import type {SourceTraceLocation, SourceTraceNavigation} from './PdfPages';
+const PdfReader = lazy(() => import('./PdfReader').then(module => ({default: module.PdfReader})));
 import './task-center.css';
 import './styles/annotations.css';
 import './resizable-panels.css';
-import {loadPdfOutline, OutlineEntry} from './pdfOutline';
-import {collectChapterSource} from './chapterSummary';
+import type {OutlineEntry} from './pdfOutline';
+const loadPdfOutline: typeof import('./pdfOutline').loadPdfOutline = async (...args) => (await import('./pdfOutline')).loadPdfOutline(...args);
+const collectChapterSource: typeof import('./chapterSummary').collectChapterSource = async (...args) => (await import('./chapterSummary')).collectChapterSource(...args);
 import {createSummaryTask, pauseSummaryTask, listSummaryGaps, SummaryGap} from './api';
-import {ensureFullDocumentIndex, RagIndexProgress} from './ragIndex';
 import {parseLearningStructureImport} from './summaryImport';
 import {useAutoDismiss} from './useAutoDismiss';
 import {AnswerContent, SummaryContent} from './StructuredContent';
-import {AgentProgress} from './api';
 import './reading-agent.css';
 import './structured-content.css';
 
@@ -42,7 +47,6 @@ function describeTaskError(message: string): string {
   return message;
 }
 
-type Message = Pick<ChatMessage, 'role' | 'content'>;
 type Screen = 'home' | 'overview' | 'reader' | 'memory';
 type BookGenerationState = 'idle' | 'running' | 'pausing' | 'paused' | 'cancelled';
 type BookGenerationTask = {mode: 'running' | 'paused' | 'cancelled'; controller: AbortController};
@@ -67,60 +71,6 @@ function ensureBookGenerationActive(task?: BookGenerationTask) {
     error.name = 'BookGenerationPaused';
     throw error;
   }
-}
-
-function normalizeTraceText(value: string): string {
-  return value.toLocaleLowerCase().replace(/[\s，。！？；：、“”‘’（）()【】\[\]《》<>…·—_\-]/g, '');
-}
-
-function traceTerms(value: string): string[] {
-  const normalized = normalizeTraceText(value);
-  const terms = new Set<string>();
-  for (const word of value.toLocaleLowerCase().match(/[a-z][a-z0-9_.-]{2,}/g) || []) terms.add(word);
-  for (const run of normalized.match(/[\u3400-\u9fff]{2,}/g) || []) {
-    if (run.length <= 8) terms.add(run);
-    for (const size of [6, 5, 4, 3]) {
-      if (run.length < size) continue;
-      const step = size >= 5 ? 2 : 3;
-      for (let index = 0; index <= run.length - size; index += step) terms.add(run.slice(index, index + size));
-    }
-  }
-  return [...terms].sort((left, right) => right.length - left.length).slice(0, 48);
-}
-
-function traceSnippet(source: string, terms: string[]): string {
-  const text = source.replace(/\s+/g, ' ').trim();
-  const lower = text.toLocaleLowerCase();
-  const term = terms.find(item => normalizeTraceText(text).includes(normalizeTraceText(item)));
-  let index = term ? lower.indexOf(term.toLocaleLowerCase()) : 0;
-  if (term && index < 0) {
-    const compactIndex = normalizeTraceText(text).indexOf(normalizeTraceText(term));
-    let compactOffset = 0;
-    index = 0;
-    while (index < text.length && compactOffset < compactIndex) {
-      compactOffset += normalizeTraceText(text[index]).length;
-      index += 1;
-    }
-  }
-  const start = Math.max(0, index - 42);
-  const end = Math.min(text.length, index + Math.max(term?.length || 0, 100));
-  return `${start ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`;
-}
-
-function locateSummarySources(selection: string, pages: OcrPage[], startPage: number, endPage: number): SourceTraceLocation[] {
-  const compactSelection = normalizeTraceText(selection);
-  const terms = traceTerms(selection);
-  const candidates = pages.filter(page => page.page_number >= startPage && page.page_number <= endPage).map(page => {
-    const compactPage = normalizeTraceText(page.text);
-    const exact = compactSelection.length >= 4 && compactPage.includes(compactSelection);
-    const matchedTerms = terms.filter(term => compactPage.includes(normalizeTraceText(term)));
-    const score = (exact ? 10000 + compactSelection.length * 20 : 0) + matchedTerms.reduce((total, term) => total + term.length * term.length, 0);
-    return {page: page.page_number, snippet: traceSnippet(page.text, matchedTerms), score, exact};
-  }).filter(item => item.score > 0);
-  const exactMatches = candidates.filter(item => item.exact);
-  if (exactMatches.length) return exactMatches.map(({page, snippet, score}) => ({page, snippet, score})).sort((a, b) => a.page - b.page);
-  const maximum = Math.max(0, ...candidates.map(item => item.score));
-  return candidates.filter(item => item.score >= Math.max(18, maximum * .52)).sort((a, b) => b.score - a.score || a.page - b.page).slice(0, 12).map(({page, snippet, score}) => ({page, snippet, score}));
 }
 
 function clampPanelSize(value: number, minimum: number, maximum: number): number {
@@ -153,11 +103,6 @@ export function App() {
   const [multiBookMode, setMultiBookMode] = useState(false);
   const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
   const [useWebVerification, setUseWebVerification] = useState(true);
-  const [indexingBookTitle, setIndexingBookTitle] = useState('');
-  const [question, setQuestion] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [assistantMessages, setAssistantMessages] = useState<Message[]>([]);
-  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [panelMode, setPanelMode] = useState<'chat' | 'master' | 'notes' | 'cards'>('chat');
   const [currentPage, setCurrentPage] = useState(1);
   const [readerPageRevision, setReaderPageRevision] = useState(0);
@@ -181,34 +126,29 @@ export function App() {
   const [traceError, setTraceError] = useState('');
   const [sourceTrace, setSourceTrace] = useState<SourceTraceNavigation | null>(null);
   const [returnedSummarySelection, setReturnedSummarySelection] = useState<ReturnedSummarySelection | null>(null);
-  const [floatingCardId, setFloatingCardId] = useState<string | null>(null);
   const [floatingCardOffset, setFloatingCardOffset] = useState({x: 0, y: 0});
-  const [recognizedCardCount, setRecognizedCardCount] = useState(0);
   const cardDrag = useRef<{x: number; y: number; offsetX: number; offsetY: number} | null>(null);
   const [busy, setBusy] = useState(false);
-  const [manualQuestion, setManualQuestion] = useState('');
-  const [manualAnswer, setManualAnswer] = useState('');
   const [deepAnswer, setDeepAnswer] = useState(false);
-  const [agentEvents, setAgentEvents] = useState<AgentProgress[]>([]);
-  const askController = useRef<AbortController | null>(null);
   const askDocumentId = useRef(activeDocument?.id);
   askDocumentId.current = activeDocument?.id;
-  useEffect(() => {
-    setAgentEvents([]);
-    return () => { askController.current?.abort(); };
-  }, [activeDocument?.id]);
   const [backupBusy, setBackupBusy] = useState(false);
-  const [ragProgress, setRagProgress] = useState<RagIndexProgress | null>(null);
-  const [ragSources, setRagSources] = useState<RagSource[]>([]);
-  const [ragStatus, setRagStatus] = useState<RagStatus | null>(null);
-  const [webSources, setWebSources] = useState<WebSource[]>([]);
-  const [citationVerification, setCitationVerification] = useState<CitationVerification | null>(null);
-  const [verificationRunning, setVerificationRunning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [taskCenterOpen, setTaskCenterOpen] = useState(false);
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
   const [error, setError] = useState('');
   const {notes, setNotes, noteDraft, setNoteDraft, noteTitle, setNoteTitle, noteTags, setNoteTags, noteSearch, setNoteSearch, editingNote, setEditingNote, editingContent, setEditingContent, editingTitle, setEditingTitle, editingTags, setEditingTags, addNote, removeNote, createPageStickyNote, updatePageStickyNote, deletePageStickyNote, saveEditedNote, toggleNotePinned, exportNotes} = useNotes(activeDocument, currentPage, excerpt, setError);
+  const {question, setQuestion, messages, setMessages, assistantMessages, agentEvents, ragProgress, indexingBookTitle,
+    ragSources, ragStatus, webSources, citationVerification, verificationRunning, runAsk, ask, cancelAsk,
+    clearConversation, saveLastExplanation} = useConversation({
+      activeDocument, documents, activeProfile, profiles, excerpt, currentPage, chapterSummaries,
+      master: panelMode === 'master', includeCurrentExcerpt, multiBookMode, selectedBookIds, useWebVerification,
+      deepAnswer, busy, setBusy, setError, onNoteSaved: note => setNotes(items => [note, ...items]),
+    });
+  const practice = useFlashcards({
+      activeDocument, activeProfile, currentPage, excerpt, busy, setBusy, setError,
+    });
+  const {flashcards, setFlashcards, setFloatingCardId, setRecognizedCardCount, makeFlashcardsFromExcerpt} = practice;
   const [assistantWidth, setAssistantWidth] = useState(() => storedPanelSize('reader-layout-assistant-width', 430));
   const [excerptHeight, setExcerptHeight] = useState(() => storedPanelSize('reader-layout-excerpt-height', 150));
   const [composerHeight, setComposerHeight] = useState(() => storedPanelSize('reader-layout-composer-height', 92));
@@ -226,9 +166,7 @@ export function App() {
   useAutoDismiss(chapterSummaryError, () => setChapterSummaryError(''));
   useAutoDismiss(traceError, () => setTraceError(''));
   useAutoDismiss(structureImportStatus, () => setStructureImportStatus(''), 5000);
-  useAutoDismiss(citationVerification?.warning, () => {
-    setCitationVerification(current => current ? {...current, warning: ''} : current);
-  });
+
 
   useEffect(() => { window.localStorage.setItem('reader-layout-assistant-width', String(assistantWidth)); }, [assistantWidth]);
   useEffect(() => { window.localStorage.setItem('reader-layout-excerpt-height', String(excerptHeight)); }, [excerptHeight]);
@@ -331,19 +269,15 @@ export function App() {
     if (activeDocument) setSelectedBookIds(items => items.length ? items : [activeDocument.id]);
   }, [activeDocument?.id]);
 
+  useDocumentLearningData(activeDocument?.id, {
+    reset: () => {setMessages([]); setNotes([]); setFlashcards([]); setChapterSummaries([]);},
+    loaded: data => {setMessages(data.history); setNotes(data.notes); setFlashcards(data.flashcards); setChapterSummaries(data.summaries);},
+    error: setError,
+  });
   useEffect(() => {
-    setAssistantMessages([]);
-    setFloatingCardId(null);
-    setFloatingCardOffset({x: 0, y: 0});
-    setRecognizedCardCount(0);
-    setIncludeCurrentExcerpt(true);
-    setRagProgress(null); setRagSources([]); setRagStatus(null); setWebSources([]); setCitationVerification(null); setVerificationRunning(false);
+    setFloatingCardOffset({x: 0, y: 0}); setIncludeCurrentExcerpt(true);
     setSummarySelection(null); setTraceLocations([]); setTraceError(''); setSourceTrace(null);
-    if (!activeDocument) { setMessages([]); setNotes([]); setFlashcards([]); setChapterSummaries([]); return; }
-    Promise.all([listChatMessages(activeDocument.id), listNotes(activeDocument.id), listFlashcards(activeDocument.id), listChapterSummaries(activeDocument.id).catch(() => [])])
-      .then(([history, savedNotes, savedCards, savedSummaries]) => { setMessages(history); setNotes(savedNotes); setFlashcards(savedCards); setChapterSummaries(savedSummaries); })
-      .catch(reason => setError(reason instanceof Error ? reason.message : '学习数据加载失败'));
-  }, [activeDocument]);
+  }, [activeDocument?.id]);
 
   useEffect(() => {
     if (screen !== 'overview' || !activeDocument) return;
@@ -474,81 +408,6 @@ export function App() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : '移动教材失败'); }
   };
 
-  const wholePdfQuestionContext = async () => {
-    if (!activeDocument) throw new Error('请先打开一本教材。');
-    const book = chapterSummaries.find(item => item.chapter_key === `${activeDocument.id}:__book__`);
-    if (book?.content.trim()) return `【全书知识结构】\n${book.content}`.slice(0, 12000);
-    return '';
-  };
-
-  const runAsk = async (prompt: string) => {
-    if (!prompt.trim() || !activeProfile || busy) return;
-    if (includeCurrentExcerpt && !excerpt.trim()) { setError('请选择或粘贴当前页原文，或者切换到“全书＋联网”模式。'); return; }
-    const user = {role: 'user' as const, content: prompt.trim()};
-    const master = panelMode === 'master';
-    const conversation = master ? messages : assistantMessages;
-    const update = master ? setMessages : setAssistantMessages;
-    update(items => [...items, user, {role: 'assistant', content: ''}]);
-    setQuestion('');
-    setBusy(true);
-    setError('');
-    const controller = new AbortController();
-    askController.current = controller;
-    setAgentEvents([]);
-    setRagSources([]); setRagStatus(null); setWebSources([]); setRagProgress(null); setCitationVerification(null); setVerificationRunning(false);
-    try {
-      const ragDocumentIds = multiBookMode ? selectedBookIds : activeDocument ? [activeDocument.id] : [];
-      if (!includeCurrentExcerpt) {
-        if (!ragDocumentIds.length) throw new Error('请至少选择一本教材。');
-        for (const documentId of ragDocumentIds) {
-          const document = documents.find(item => item.id === documentId);
-          setIndexingBookTitle(document?.title || '教材');
-          await ensureFullDocumentIndex(documentId, setRagProgress, controller.signal);
-        }
-        setIndexingBookTitle('');
-      }
-      const questionContext = includeCurrentExcerpt ? excerpt.trim() : await wholePdfQuestionContext();
-      await streamAnswer({
-        document_id: activeDocument?.id,
-        document_ids: !includeCurrentExcerpt ? ragDocumentIds : undefined,
-        profile_id: activeProfile,
-        excerpt: questionContext,
-        question: user.content,
-        history: conversation.slice(-12),
-        page_number: includeCurrentExcerpt ? currentPage : undefined,
-        use_web: !includeCurrentExcerpt && useWebVerification,
-        use_rag: !includeCurrentExcerpt,
-        use_agent: !includeCurrentExcerpt && deepAnswer,
-        verify_citations: !includeCurrentExcerpt,
-        persist_history: master,
-        max_tokens: includeCurrentExcerpt || deepAnswer ? undefined : Math.max(profiles.find(profile => profile.id === activeProfile)?.max_tokens || 2048, 8192),
-      }, delta => update(items => {
-        if (controller.signal.aborted || !items.length) return items;
-        const next = [...items];
-        next[next.length - 1] = {...next[next.length - 1], content: next[next.length - 1].content + delta};
-        return next;
-      }), controller.signal, (sources, status) => {setRagSources(sources); setRagStatus(status);}, (verification, running) => {
-        setVerificationRunning(running);
-        if (verification) setCitationVerification(verification);
-      }, sources => setWebSources(sources), progress => setAgentEvents(items => [...items.slice(-19), progress]));
-    } catch (error) {
-      if (askDocumentId.current !== activeDocument?.id) return;
-      if (controller.signal.aborted) {
-        setAgentEvents(items => [...items, {stage: 'cancelled', message: '已取消本次问答，已停止后续调用；已显示的文字尚未完成核验。', model_calls: items.at(-1)?.model_calls || 0, max_model_calls: 4}]);
-      } else {
-        setError(error instanceof Error ? error.message : '模型请求失败');
-        setAgentEvents(items => items.length ? [...items, {...items[items.length - 1], stage: 'error', message: '本次深度问答未完成，可重新发送问题重试。'}] : items);
-      }
-    } finally {
-      askController.current = null;
-      setVerificationRunning(false);
-      setIndexingBookTitle('');
-      setBusy(false);
-    }
-  };
-
-  const ask = async () => runAsk(question);
-
   const startReadingAssist = (text: string, action: 'explain' | 'summary' | 'questions' | 'connect') => {
     const prompts = {
       explain: '请解释选中原文中的核心概念、关键术语和隐含逻辑，并给出一个易懂例子。',
@@ -564,41 +423,6 @@ export function App() {
     setAssistantOpen(true);
   };
 
-  const saveLastExplanation = async () => {
-    if (!activeDocument) return;
-    const conversation = panelMode === 'master' ? messages : assistantMessages;
-    const answer = [...conversation].reverse().find(item => item.role === 'assistant' && item.content.trim());
-    if (!answer) return;
-    try {
-      const note = await createNote(activeDocument.id, {page_number: currentPage, excerpt: excerpt.trim(), content: answer.content, title: 'AI 阅读辅助', tags: ['AI', '阅读辅助'], pinned: false});
-      setNotes(items => [note, ...items]);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '解释保存失败'); }
-  };
-
-  const clearConversation = async () => {
-    const master = panelMode === 'master';
-    const conversation = master ? messages : assistantMessages;
-    if (!activeDocument || !conversation.length) return;
-    if (!master) { setAssistantMessages([]); return; }
-    if (!window.confirm('确定清空当前教材的 Master 对话记录吗？')) return;
-    try { await clearChatMessages(activeDocument.id); setMessages([]); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : '清空失败'); }
-  };
-
-  const makeFlashcardsFromExcerpt = async (sourceText: string, page: number) => {
-    if (!activeDocument || !activeProfile || !sourceText.trim() || busy) return;
-    setBusy(true); setError('');
-    try {
-      const created = await generateFlashcards(activeDocument.id, {profile_id: activeProfile, page_number: page, excerpt: sourceText.trim()});
-      setFlashcards(items => [...created, ...items]);
-      setRecognizedCardCount(created.length);
-      if (created[0]) setFloatingCardId(created[0].id);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '卡片生成失败'); }
-    finally { setBusy(false); }
-  };
-
-  const makeFlashcards = async () => makeFlashcardsFromExcerpt(excerpt, currentPage);
-
   const handleRegionQuestions = (text: string, page: number) => {
     setExcerpt(text);
     setIncludeCurrentExcerpt(true);
@@ -612,45 +436,6 @@ export function App() {
     }
     void makeFlashcardsFromExcerpt(text, page);
   };
-
-  const removeFlashcard = async (cardId: string) => {
-    if (!activeDocument) return;
-    try {
-      await deleteFlashcard(activeDocument.id, cardId);
-      setFlashcards(items => items.filter(item => item.id !== cardId));
-      if (floatingCardId === cardId) setFloatingCardId(null);
-    }
-    catch (reason) { setError(reason instanceof Error ? reason.message : '删除失败'); }
-  };
-
-  const addManualCard = async () => {
-    if (!activeDocument || !manualQuestion.trim() || !manualAnswer.trim()) return;
-    try {
-      const card = await createFlashcard(activeDocument.id, {page_number: currentPage, source_excerpt: excerpt.trim(), question: manualQuestion.trim(), answer: manualAnswer.trim()});
-      setFlashcards(items => [card, ...items]); setManualQuestion(''); setManualAnswer('');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '卡片保存失败'); }
-  };
-
-  const markCard = async (card: Flashcard, mastered: boolean) => {
-    if (!activeDocument) return;
-    try {
-      const updated = await reviewFlashcard(activeDocument.id, card.id, mastered);
-      setFlashcards(items => items.map(item => item.id === card.id ? updated : item));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '复习状态保存失败'); }
-  };
-
-  const editCard = async (card: Flashcard) => {
-    if (!activeDocument) return;
-    const question = window.prompt('修改问题', card.question)?.trim();
-    if (!question) return;
-    const answer = window.prompt('修改答案', card.answer)?.trim();
-    if (!answer) return;
-    try {
-      const updated = await updateFlashcard(activeDocument.id, card.id, question, answer);
-      setFlashcards(items => items.map(item => item.id === card.id ? updated : item));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '卡片更新失败'); }
-  };
-
 
   const beginFloatingCardDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
@@ -845,9 +630,6 @@ export function App() {
   const nextChapterPage = selectedChapter ? chapters.slice(selectedChapterIndex + 1).find(chapter => chapter.page > selectedChapter.page)?.page : undefined;
   const chapterNotes = selectedChapter ? notes.filter(note => note.page_number && note.page_number >= selectedChapter.page && (!nextChapterPage || note.page_number < nextChapterPage)) : [];
   const chapterFlashcards = selectedChapter ? flashcards.filter(card => card.page_number && card.page_number >= selectedChapter.page && (!nextChapterPage || card.page_number < nextChapterPage)) : [];
-  const floatingCardIndex = floatingCardId ? flashcards.findIndex(card => card.id === floatingCardId) : -1;
-  const floatingCard = floatingCardIndex >= 0 ? flashcards[floatingCardIndex] : null;
-  const floatingCardTotal = flashcards.length;
   const currentSummaryTask = backgroundTasks.find(task => task.document_id === activeDocument?.id && task.task_type === 'structure-summary' && ['queued', 'running', 'cancelling'].includes(task.status)) || backgroundTasks.find(task => task.document_id === activeDocument?.id && task.task_type === 'structure-summary' && task.status === 'paused');
   const startSummaryTask = async (chapterIndex: number | null) => {
     if (!activeDocument || !activeProfile || !chapters.length || chapterSummaryBusy) return;
@@ -891,10 +673,6 @@ export function App() {
     if (currentSummaryTask) await cancelTask(currentSummaryTask.id);
     else bookGenerationTask.current?.controller.abort();
   };
-  const visibleDocuments = documents.filter(document => selectedFolderId === 'all'
-    || selectedFolderId === 'unfiled' && !document.folder_id
-    || document.folder_id === selectedFolderId);
-  const unfiledCount = documents.filter(document => !document.folder_id).length;
   const refreshTasksNow = async () => setBackgroundTasks(await listBackgroundTasks());
   const queueIndexes = async (documentIds: string[]) => {
     if (!documentIds.length) return;
@@ -933,19 +711,12 @@ export function App() {
   const mark = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5V5.5C7 3 11.5 1.5 14 3.5C15.5 4.7 14.8 7.5 14.4 9M3.5 20.5C8 17.3 12 18 18 21"/><path d="M6 13.8C11 10 13.5 18.2 19 13.5"/><circle cx="21" cy="11.5" r="1.5"/></svg>;
   const header = <><header className="guided-header"><div className="guided-leading"><button className="guided-back" aria-label="返回前一个页面" disabled={!navigationStack.length} onClick={goBack}>← 返回</button><button className="guided-brand" onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}><span>{mark}</span><strong>读步天下</strong></button></div><nav aria-label="学习空间"><button aria-current={screen === 'home' || screen === 'overview' ? 'page' : undefined} onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}>学习空间</button><button aria-current={screen === 'memory' ? 'page' : undefined} onClick={openMemory}>学习记忆</button></nav><div className="guided-actions"><details className="global-more"><summary aria-label="更多设置">···</summary><div><button onClick={() => setSettingsOpen(true)}>模型配置</button><button disabled={backupBusy} onClick={() => void exportBackup()}>{backupBusy ? '处理中…' : '完整备份'}</button><button disabled={backupBusy} onClick={() => backupInput.current?.click()}>恢复备份</button><button onClick={() => void exportJsonBackup()}>导出数据 JSON</button></div></details><button className="import-button" onClick={() => fileInput.current?.click()}>＋ 导入教材</button></div><input ref={fileInput} hidden type="file" accept="application/pdf" onChange={event => importPdf(event.target.files?.[0])}/><input ref={backupInput} hidden type="file" accept="application/zip,.zip" onChange={event => void restoreBackup(event.target.files?.[0])}/></header>{taskCenterUi}</>;
 
-  if (screen === 'home') return <div className="guided-shell">{header}<main className="guided-home original-home">
-    {activeDocument && <section className="continue-reading"><p className="continue-eyebrow">CONTINUE　继续学习</p><div className="continue-row"><div className="editorial-cover">408<br/><small>读步天下</small></div><div><p>{activeDocument.title}</p><h1>继续阅读教材</h1><span>PDF {currentPage} · {notes.length} 条学习记忆 · {flashcards.filter(card => card.mastered).length} 项已掌握</span></div><div className="continue-actions"><button className="primary-action" onClick={() => enterReader()}>继续学习 →</button><button onClick={() => navigateTo('overview', {memoryBookOpen: false, assistantOpen: false})}>查看全书结构</button></div></div></section>}
-    <section className="library-home">
-      <div className="section-heading"><div><p>LIBRARY　你的教材</p></div><span>{documents.length} 本教材 · {folders.length} 个文件夹 · 本地保存</span></div>
-      <div className="folder-toolbar">
-        <nav aria-label="教材文件夹"><button aria-current={selectedFolderId === 'all'} onClick={() => setSelectedFolderId('all')}><span>全部教材</span><small>{documents.length}</small></button>{folders.map(folder => <span className="folder-tab" key={folder.id}><button aria-current={selectedFolderId === folder.id} onClick={() => setSelectedFolderId(folder.id)}><span>▱ {folder.name}</span><small>{folder.document_count}</small></button><details><summary aria-label={`${folder.name} 文件夹设置`}>···</summary><div><button onClick={() => void editFolder(folder)}>重命名</button><button className="danger-text" onClick={() => void removeFolder(folder)}>删除文件夹</button></div></details></span>)}<button aria-current={selectedFolderId === 'unfiled'} onClick={() => setSelectedFolderId('unfiled')}><span>未分类</span><small>{unfiledCount}</small></button></nav>
-        <button className="new-folder" onClick={() => void addFolder()}>＋ 新建文件夹</button>
-      </div>
-      <div className="book-list-original">{visibleDocuments.map(document => <article className="library-book" key={document.id}><span className="editorial-cover compact">PDF</span><span className="book-identity"><strong>{document.title}</strong><small>{(document.byte_size / 1024 / 1024).toFixed(1)} MB · {activeDocument?.id === document.id ? `上次读到 PDF ${currentPage}` : folders.find(folder => folder.id === document.folder_id)?.name || '未分类'}</small></span><button className="book-open" aria-label={`打开教材 ${document.title}`} onClick={() => openBook(document)}>打开 →</button><details className="book-more"><summary aria-label={`${document.title} 更多操作`}>···</summary><div><button onClick={() => openBook(document)}>查看全书结构</button><button onClick={() => void renameBook(document)}>重命名</button><label className="move-book-label">移动到<select value={document.folder_id || ''} onChange={event => void moveBookToFolder(document, event.target.value)}><option value="">未分类</option>{folders.map(folder => <option value={folder.id} key={folder.id}>{folder.name}</option>)}</select></label><button className="danger-text" onClick={() => void removeBook(document)}>删除教材</button></div></details></article>)}</div>
-      {!documents.length && <div className="guided-empty"><p>还没有教材。</p><button className="primary-action" onClick={() => fileInput.current?.click()}>选择 PDF</button></div>}
-      {documents.length > 0 && !visibleDocuments.length && <div className="guided-empty folder-empty"><p>这个文件夹还没有教材。</p><span>可以从教材的“···”菜单移动，或在当前文件夹中导入 PDF。</span><button className="primary-action" onClick={() => fileInput.current?.click()}>导入到此文件夹</button></div>}
-    </section><p className="local-note">文件夹和教材仅保存在这台电脑上</p>
-  </main>{settingsOpen && <ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/>}</div>;
+  if (screen === 'home') return <div className="guided-shell">{header}<LibraryHome activeDocument={activeDocument} currentPage={currentPage} notesCount={notes.length}
+    masteredCount={flashcards.filter(card => card.mastered).length} documents={documents} folders={folders}
+    selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} enterReader={() => enterReader()}
+    onOverview={() => navigateTo('overview', {memoryBookOpen: false, assistantOpen: false})}
+    onImport={() => fileInput.current?.click()} openBook={openBook} renameBook={renameBook} removeBook={removeBook}
+    moveBookToFolder={moveBookToFolder} addFolder={addFolder} editFolder={editFolder} removeFolder={removeFolder}/>{settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>}</div>;
 
   if (screen === 'overview' && activeDocument) return <div className="guided-shell">{header}<main className="book-overview">
     <button className="back-link" onClick={goBack}>← 学习空间</button>
@@ -977,13 +748,13 @@ export function App() {
         </>}
       </section>
     </div>
-  </main>{summarySelection && <aside className="summary-trace-popover" aria-live="polite"><header><div><small>已选择总结文字</small><strong>{summarySelection.text}</strong></div><button aria-label="关闭原文溯源" onClick={() => {setSummarySelection(null); setTraceLocations([]); setTraceError('');}}>×</button></header>{!traceLocations.length && !traceError && <button className="trace-primary" disabled={traceLoading} onClick={() => void findSummarySources()}>{traceLoading ? '正在匹配原文…' : '原文溯源'}</button>}{traceError && <p className="trace-error">{traceError}</p>}{traceLocations.length > 0 && <><p>找到 {traceLocations.length} 处相关原文</p><div className="trace-location-list">{traceLocations.map((location, index) => <button key={`${location.page}-${index}`} onClick={() => openTraceLocation(index)}><strong>PDF 第 {location.page} 页</strong><span>{location.snippet}</span><b>跳转 →</b></button>)}</div></>}</aside>}{settingsOpen && <ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/>}</div>;
+  </main>{summarySelection && <aside className="summary-trace-popover" aria-live="polite"><header><div><small>已选择总结文字</small><strong>{summarySelection.text}</strong></div><button aria-label="关闭原文溯源" onClick={() => {setSummarySelection(null); setTraceLocations([]); setTraceError('');}}>×</button></header>{!traceLocations.length && !traceError && <button className="trace-primary" disabled={traceLoading} onClick={() => void findSummarySources()}>{traceLoading ? '正在匹配原文…' : '原文溯源'}</button>}{traceError && <p className="trace-error">{traceError}</p>}{traceLocations.length > 0 && <><p>找到 {traceLocations.length} 处相关原文</p><div className="trace-location-list">{traceLocations.map((location, index) => <button key={`${location.page}-${index}`} onClick={() => openTraceLocation(index)}><strong>PDF 第 {location.page} 页</strong><span>{location.snippet}</span><b>跳转 →</b></button>)}</div></>}</aside>}{settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>}</div>;
 
-  if (screen === 'memory') return <div className="guided-shell">{header}<main className="memory-page">{!memoryBookOpen ? <><header><p>LEARNING MEMORY</p><h1>学习记忆</h1><span>正文理解与习题复盘都保存在来源教材下面。</span></header><nav className="memory-category-nav"><button aria-current={memoryMode === 'body'} onClick={() => setMemoryMode('body')}>正文记忆</button><button aria-current={memoryMode === 'practice'} onClick={() => setMemoryMode('practice')}>习题学习记录</button></nav><section className="memory-book-list">{documents.map(document => <button key={document.id} onClick={() => openMemoryBook(document)}><span className="editorial-cover compact">PDF</span><span><strong>{document.title}</strong><small>{activeDocument?.id === document.id ? (memoryMode === 'body' ? `${notes.length} 条正文记忆` : `${flashcards.length} 条习题记录`) : '打开查看学习记录'}</small></span><b>打开 →</b></button>)}</section></> : activeDocument ? <><div className="memory-detail-head"><button onClick={goBack}>← 学习记忆</button><div><h1>{activeDocument.title}</h1><span>{memoryMode === 'body' ? '正文记忆' : '习题学习记录'}</span></div><button onClick={() => enterReader()}>继续学习 →</button></div><nav className="memory-category-nav"><button aria-current={memoryMode === 'body'} onClick={() => setMemoryMode('body')}>正文记忆</button><button aria-current={memoryMode === 'practice'} onClick={() => setMemoryMode('practice')}>习题学习记录</button></nav>{memoryMode === 'body' ? <section className="memory-list"><div className="section-heading"><h2>保存的解释与笔记</h2><span>{notes.length}</span></div>{notes.map(note => <article className="memory-card" key={note.id}><button onClick={() => {enterReader(activeDocument, note.page_number || 1); setAssistantOpen(true);}}>返回来源</button>{note.excerpt && <blockquote>{note.excerpt}</blockquote>}<p>{note.content}</p></article>)}{!notes.length && <div className="guided-empty">尚未收入正文记忆。</div>}</section> : <section className="memory-list"><div className="section-heading"><h2>习题学习记录</h2><span>{flashcards.length}</span></div>{flashcards.map(card => <article className="memory-card" key={card.id}><button onClick={() => enterReader(activeDocument, card.page_number || 1)}>回到原题</button><small>{card.mastered ? '已掌握' : '仍需复习'} · {card.review_count || 0} 次</small><strong>{card.question}</strong><p>{card.answer}</p></article>)}{!flashcards.length && <div className="guided-empty">尚未产生习题学习记录。</div>}</section>}</> : null}</main>{settingsOpen && <ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/>}</div>;
+  if (screen === 'memory') return <div className="guided-shell">{header}<main className="memory-page">{!memoryBookOpen ? <><header><p>LEARNING MEMORY</p><h1>学习记忆</h1><span>正文理解与习题复盘都保存在来源教材下面。</span></header><nav className="memory-category-nav"><button aria-current={memoryMode === 'body'} onClick={() => setMemoryMode('body')}>正文记忆</button><button aria-current={memoryMode === 'practice'} onClick={() => setMemoryMode('practice')}>习题学习记录</button></nav><section className="memory-book-list">{documents.map(document => <button key={document.id} onClick={() => openMemoryBook(document)}><span className="editorial-cover compact">PDF</span><span><strong>{document.title}</strong><small>{activeDocument?.id === document.id ? (memoryMode === 'body' ? `${notes.length} 条正文记忆` : `${flashcards.length} 条习题记录`) : '打开查看学习记录'}</small></span><b>打开 →</b></button>)}</section></> : activeDocument ? <><div className="memory-detail-head"><button onClick={goBack}>← 学习记忆</button><div><h1>{activeDocument.title}</h1><span>{memoryMode === 'body' ? '正文记忆' : '习题学习记录'}</span></div><button onClick={() => enterReader()}>继续学习 →</button></div><nav className="memory-category-nav"><button aria-current={memoryMode === 'body'} onClick={() => setMemoryMode('body')}>正文记忆</button><button aria-current={memoryMode === 'practice'} onClick={() => setMemoryMode('practice')}>习题学习记录</button></nav>{memoryMode === 'body' ? <section className="memory-list"><div className="section-heading"><h2>保存的解释与笔记</h2><span>{notes.length}</span></div>{notes.map(note => <article className="memory-card" key={note.id}><button onClick={() => {enterReader(activeDocument, note.page_number || 1); setAssistantOpen(true);}}>返回来源</button>{note.excerpt && <blockquote>{note.excerpt}</blockquote>}<p>{note.content}</p></article>)}{!notes.length && <div className="guided-empty">尚未收入正文记忆。</div>}</section> : <section className="memory-list"><div className="section-heading"><h2>习题学习记录</h2><span>{flashcards.length}</span></div>{flashcards.map(card => <article className="memory-card" key={card.id}><button onClick={() => enterReader(activeDocument, card.page_number || 1)}>回到原题</button><small>{card.mastered ? '已掌握' : '仍需复习'} · {card.review_count || 0} 次</small><strong>{card.question}</strong><p>{card.answer}</p></article>)}{!flashcards.length && <div className="guided-empty">尚未产生习题学习记录。</div>}</section>}</> : null}</main>{settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>}</div>;
 
   return <div className={`reader-shell ${assistantOpen ? 'assistant-dock-open' : ''}`} style={{'--assistant-width': `${assistantWidth}px`} as React.CSSProperties}>
     <main className="reader-panel">
-      {activeDocument ? <PdfReader document={activeDocument} targetPage={currentPage} targetPageRevision={readerPageRevision} restoreLastPosition={readerRestorePosition} sourceTrace={sourceTrace} onSourceTraceNavigate={index => setSourceTrace(trace => trace ? {...trace, index} : null)} onSourceTraceReturn={returnToSelectedSummary} onSourceTraceClose={() => setSourceTrace(null)} onBack={goBack} assistantOpen={assistantOpen} onAssistantToggle={() => setAssistantOpen(value => !value)} onExcerpt={text => {setExcerpt(text); setIncludeCurrentExcerpt(true); setPanelMode('chat'); setAssistantOpen(true);}} onRegionExcerpt={handleRegionQuestions} onAiAssist={startReadingAssist} notes={notes} onCreatePageNote={createPageStickyNote} onUpdatePageNote={updatePageStickyNote} onDeletePageNote={deletePageStickyNote} onPageChange={setCurrentPage}/> : <div className="empty hero"><div className="paper-icon">＋</div><h1>把教材放回阅读中心</h1><p>导入 PDF 后，可以边读边摘录、提问和整理知识。</p><button onClick={() => fileInput.current?.click()}>选择 PDF</button></div>}
+      {activeDocument ? <Suspense fallback={<div className="empty" role="status">正在打开阅读器…</div>}><PdfReader document={activeDocument} targetPage={currentPage} targetPageRevision={readerPageRevision} restoreLastPosition={readerRestorePosition} sourceTrace={sourceTrace} onSourceTraceNavigate={index => setSourceTrace(trace => trace ? {...trace, index} : null)} onSourceTraceReturn={returnToSelectedSummary} onSourceTraceClose={() => setSourceTrace(null)} onBack={goBack} assistantOpen={assistantOpen} onAssistantToggle={() => setAssistantOpen(value => !value)} onExcerpt={text => {setExcerpt(text); setIncludeCurrentExcerpt(true); setPanelMode('chat'); setAssistantOpen(true);}} onRegionExcerpt={handleRegionQuestions} onAiAssist={startReadingAssist} notes={notes} onCreatePageNote={createPageStickyNote} onUpdatePageNote={updatePageStickyNote} onDeletePageNote={deletePageStickyNote} onPageChange={setCurrentPage}/></Suspense> : <div className="empty hero"><div className="paper-icon">＋</div><h1>把教材放回阅读中心</h1><p>导入 PDF 后，可以边读边摘录、提问和整理知识。</p><button onClick={() => fileInput.current?.click()}>选择 PDF</button></div>}
     </main>
 
     {assistantOpen && <div className="panel-resizer main-panel-resizer" role="separator" aria-label="调整 PDF 与 AI 助读区域宽度" aria-orientation="vertical" aria-valuemin={340} aria-valuemax={760} aria-valuenow={Math.round(assistantWidth)} tabIndex={0} onPointerDown={event => beginPanelResize(event, 'assistant')} onKeyDown={event => {if (event.key === 'ArrowLeft') {event.preventDefault(); resizePanelByKeyboard('assistant', 16);} if (event.key === 'ArrowRight') {event.preventDefault(); resizePanelByKeyboard('assistant', -16);}}}><span/></div>}
@@ -1000,7 +771,7 @@ export function App() {
         <section className={`excerpt assistant-fold-panel excerpt-fold-panel ${excerptPanelCollapsed ? 'is-collapsed' : 'resizable-excerpt'} ${includeCurrentExcerpt ? '' : 'context-disabled'}`} style={excerptPanelCollapsed ? undefined : {height: `${excerptHeight}px`}}><button className="assistant-fold-toggle" type="button" aria-expanded={!excerptPanelCollapsed} aria-controls="assistant-excerpt-content" onClick={() => setExcerptPanelCollapsed(value => !value)}><span>教材摘录</span><small>{includeCurrentExcerpt ? excerpt.trim() ? '已加入提问' : '等待选择原文' : '本次不加入'}</small><b>{excerptPanelCollapsed ? '▾' : '▴'}</b></button>{!excerptPanelCollapsed && <textarea id="assistant-excerpt-content" disabled={!includeCurrentExcerpt} value={excerpt} onChange={event => setExcerpt(event.target.value)} placeholder="在 PDF 中选择文字，或在这里粘贴原文……"/>}</section>{!excerptPanelCollapsed && <div className="panel-resizer assistant-section-resizer" role="separator" aria-label="调整教材摘录区域高度" aria-orientation="horizontal" aria-valuemin={112} aria-valuemax={360} aria-valuenow={Math.round(excerptHeight)} tabIndex={0} onPointerDown={event => beginPanelResize(event, 'excerpt')} onKeyDown={event => {if (event.key === 'ArrowUp') {event.preventDefault(); resizePanelByKeyboard('excerpt', -12);} if (event.key === 'ArrowDown') {event.preventDefault(); resizePanelByKeyboard('excerpt', 12);}}}><span/></div>}
         <div className="conversation-tools"><span>{includeCurrentExcerpt ? `第 ${currentPage} 页 · 当前原文模式` : multiBookMode ? `${selectedBookIds.length} 本教材 · 多书联系` : '整本教材 · 全文 RAG 模式'} · {panelMode === 'master' ? 'Master（长期保留）' : 'Assistant（本次阅读）'}</span><span><button disabled={!includeCurrentExcerpt || !excerpt.trim() || busy} onClick={() => void runAsk('请基于当前教材摘录生成阅读导读：说明为什么要学、核心脉络，以及与前后知识的关系。')}>导读</button><button disabled={!includeCurrentExcerpt || !excerpt.trim() || busy} onClick={() => void runAsk('请对当前教材摘录做行间教学，补全作者省略的中间逻辑和推导步骤。')}>行间教学</button><button disabled={!(panelMode === 'master' ? messages : assistantMessages).some(item => item.role === 'assistant' && item.content.trim())} onClick={() => void saveLastExplanation()}>保存解释</button><button disabled={!(panelMode === 'master' ? messages : assistantMessages).length || busy} onClick={clearConversation}>清空</button></span></div>
         {!includeCurrentExcerpt && <div className="agent-mode-bar" role="group" aria-label="问答深度"><button disabled={busy} aria-pressed={!deepAnswer} onClick={() => setDeepAnswer(false)}>普通问答</button><button disabled={busy} aria-pressed={deepAnswer} onClick={() => setDeepAnswer(true)}>深度问答</button><small>{deepAnswer ? '补充检索与引用核验 · 最多 4 次模型调用 · 可取消' : '单轮检索，快速回答'}</small></div>}
-        {busy && <div className="agent-stop-bar"><span role="status">{agentEvents.at(-1)?.message || '正在准备原文与回答…'}</span><button onClick={() => askController.current?.abort()}>取消问答</button></div>}
+        {busy && <div className="agent-stop-bar"><span role="status">{agentEvents.at(-1)?.message || '正在准备原文与回答…'}</span><button onClick={cancelAsk}>取消问答</button></div>}
         <div className="conversation">
           {agentEvents.length > 0 && <details className="agent-progress-panel"><summary>{agentEvents.at(-1)?.stage === 'done' ? '深度问答已完成' : agentEvents.at(-1)?.stage === 'cancelled' ? '问答已取消' : agentEvents.at(-1)?.stage === 'error' ? '深度问答未完成' : '深度问答进度'} · 调用 {agentEvents.at(-1)?.model_calls}/{agentEvents.at(-1)?.max_model_calls}</summary><ol>{agentEvents.map((event, index) => <li key={index}>{event.message}</li>)}</ol></details>}
           {ragProgress && !includeCurrentExcerpt && ragProgress.phase !== 'done' && <div className="rag-progress"><strong>{ragProgress.phase === 'ocr' ? `${indexingBookTitle} · OCR 第 ${ragProgress.page} 页` : `${indexingBookTitle} · 正在建立全文索引`}</strong><span>{ragProgress.completed} / {ragProgress.total} 页</span><progress value={ragProgress.completed} max={ragProgress.total}/></div>}
@@ -1034,33 +805,12 @@ export function App() {
         <div className="note-filter"><input value={noteSearch} onChange={event => setNoteSearch(event.target.value)} placeholder="搜索标题、正文、摘录或标签…"/><span>{visibleNotes.length} / {notes.length}</span></div>
         <div className="notes-list">{visibleNotes.map(note => <article className={`note-card ${note.pinned ? 'pinned' : ''}`} key={note.id}><div><span>{note.pinned && '★ '}{note.page_number ? `第 ${note.page_number} 页` : '未标页码'}</span><span className="card-actions"><button onClick={() => void toggleNotePinned(note)}>{note.pinned ? '取消置顶' : '置顶'}</button><button onClick={() => {setEditingNote(note.id); setEditingContent(note.content); setEditingTitle(note.title || ''); setEditingTags((note.tags || []).join(', '));}}>编辑</button><button onClick={() => removeNote(note.id)}>删除</button></span></div>{note.title && <h3>{note.title}</h3>}{note.excerpt && <blockquote>{note.excerpt}</blockquote>}{editingNote === note.id ? <div className="inline-editor"><input value={editingTitle} onChange={event => setEditingTitle(event.target.value)} placeholder="标题"/><textarea value={editingContent} onChange={event => setEditingContent(event.target.value)}/><input value={editingTags} onChange={event => setEditingTags(event.target.value)} placeholder="标签，用逗号分隔"/><span><button onClick={() => setEditingNote(null)}>取消</button><button onClick={() => saveEditedNote(note.id)}>保存</button></span></div> : <p>{note.content}</p>}{!!note.tags?.length && <div className="annotation-tags">{note.tags.map(tag => <span key={tag}>#{tag}</span>)}</div>}<time>{note.updated_at || note.created_at}</time></article>)}{!visibleNotes.length && <div className="assistant-welcome"><span>✎</span><p>{notes.length ? '没有匹配的笔记。' : '阅读时把关键原文引用过来，再写下自己的理解。'}</p></div>}</div>
         {error && <div className="error">{error}</div>}
-      </div> : <div className="cards-workspace">
-        <div className="card-generator question-recognizer">
-          <div><strong>框选自动识题</strong><p>在 PDF 中启用“框选”，圈住题目区域后会自动识别其中全部问题并生成答案，不限制题目个数。</p></div>
-          {recognizedCardCount > 0 && <span>本次识别 {recognizedCardCount} 题</span>}
-          <button disabled={!excerpt.trim() || !activeProfile || busy} onClick={makeFlashcards}>{busy ? '正在识别全部问题…' : '重新识别当前框选'}</button>
-        </div>
-        <details className="manual-card compact-manual"><summary>手动补充卡片</summary><div><input value={manualQuestion} onChange={event => setManualQuestion(event.target.value)} placeholder="手工卡片问题"/><textarea value={manualAnswer} onChange={event => setManualAnswer(event.target.value)} placeholder="答案"/><button disabled={!manualQuestion.trim() || !manualAnswer.trim()} onClick={() => void addManualCard()}>添加卡片</button></div></details>
-        <div className="flashcard-list">
-          {flashcards.map(card => <article className={`flashcard ${card.mastered ? 'mastered' : ''}`} key={card.id} onClick={() => {setFloatingCardId(card.id); setFloatingCardOffset({x: 0, y: 0});}}>
-            <div className="flashcard-meta"><span>{card.page_number ? `第 ${card.page_number} 页` : '知识卡片'} · 复习 {card.review_count || 0} 次</span><span><button onClick={event => {event.stopPropagation(); void editCard(card);}}>编辑</button><button onClick={event => {event.stopPropagation(); void removeFlashcard(card.id);}}>删除</button></span></div>
-            <strong>{card.question}</strong>
-            <small>{card.mastered ? '✓ 已掌握 · 点击打开题目' : '点击在右侧悬浮窗中查看问题与答案'}</small>
-          </article>)}
-          {!flashcards.length && <div className="assistant-welcome"><span>◇</span><p>点击阅读器顶部“框选”，圈住一道或多道题目，系统会自动识别全部问题并生成答案。</p></div>}
-        </div>
-        {error && <div className="error">{error}</div>}
-      </div>}
+      </div> : <PracticeWorkspace practice={practice} canGenerate={Boolean(excerpt.trim() && activeProfile)} busy={busy} error={error}
+        onOpenCard={id => {setFloatingCardId(id); setFloatingCardOffset({x: 0, y: 0});}}/>}
     </aside>}
 
-    {screen === 'reader' && floatingCard && <section className="floating-question-card" style={{transform: `translate3d(${floatingCardOffset.x}px, ${floatingCardOffset.y}px, 0)`}} aria-label="题目悬浮窗">
-      <header onPointerDown={beginFloatingCardDrag}>
-        <div><small>题目 {floatingCardIndex + 1} / {floatingCardTotal}</small><strong>问答卡片</strong></div>
-        <nav onPointerDown={event => event.stopPropagation()}><button aria-label="上一题" disabled={floatingCardIndex <= 0} onClick={() => setFloatingCardId(flashcards[floatingCardIndex - 1]?.id || null)}>←</button><button aria-label="下一题" disabled={floatingCardIndex >= floatingCardTotal - 1} onClick={() => setFloatingCardId(flashcards[floatingCardIndex + 1]?.id || null)}>→</button><button aria-label="关闭题目悬浮窗" onClick={() => setFloatingCardId(null)}>×</button></nav>
-      </header>
-      <div className="floating-card-body"><span>{floatingCard.page_number ? `PDF 第 ${floatingCard.page_number} 页` : '知识卡片'} · 复习 {floatingCard.review_count || 0} 次</span><h3>{floatingCard.question}</h3><section><small>参考答案</small><p>{floatingCard.answer}</p></section></div>
-      <footer><button onClick={() => void markCard(floatingCard, false)}>还需复习</button><button className={floatingCard.mastered ? 'active' : ''} onClick={() => void markCard(floatingCard, true)}>已掌握</button>{floatingCard.page_number && <button onClick={() => requestReaderPage(floatingCard.page_number!)}>回到原题</button>}</footer>
-    </section>}
-    {settingsOpen && <ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/>}
+    {screen === 'reader' && <FloatingQuestion practice={practice} floatingCardOffset={floatingCardOffset}
+      beginFloatingCardDrag={beginFloatingCardDrag} requestReaderPage={requestReaderPage}/>}
+    {settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>}
   </div>;
 }

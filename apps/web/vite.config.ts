@@ -6,6 +6,7 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', 'VITE_');
   return {
     plugins: [react()],
+    build: {manifest: true},
     server: {
       port: 5174,
       proxy: {'/api': process.env.VITE_API_TARGET || env.VITE_API_TARGET || 'http://127.0.0.1:8790'},

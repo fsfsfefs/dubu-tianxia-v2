@@ -1,13 +1,9 @@
-import {Fragment, useCallback, useEffect, useRef, useState} from 'react';
-import {getDocument, GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
+import {Fragment, useEffect, useRef, useState} from 'react';
+import {GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import {
-  createHighlight, deleteHighlight, DocumentRecord, getPosition, Highlight, HighlightRect,
-  listHighlights, listOcrPages, Note, saveOcrPage, savePosition, updateHighlight,
-} from './api';
+import {saveOcrPage, type DocumentRecord, type Highlight, type HighlightRect, type Note} from './api';
 import './pdf-reader.css';
 import {OcrWord, recognizeCanvas} from './ocr';
-import {useAutoDismiss} from './useAutoDismiss';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 

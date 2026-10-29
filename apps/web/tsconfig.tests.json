@@ -11,7 +11,14 @@
     "src/useAutoDismiss.ts",
     "src/features/tasks/TaskCenter.tsx",
     "src/features/settings/ModelSettings.tsx",
-    "src/features/notes/useNotes.ts"
+    "src/features/notes/useNotes.ts",
+    "src/shared/*.ts",
+    "src/features/assistant/useConversation.ts",
+    "src/features/practice/*.ts",
+    "src/features/practice/*.tsx",
+    "src/features/library/*.tsx",
+    "src/features/summary/sourceTrace.ts",
+    "src/vite-env.d.ts"
   ],
   "references": []
 }

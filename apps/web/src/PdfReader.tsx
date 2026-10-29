@@ -1,9 +1,9 @@
-import {Fragment, useCallback, useEffect, useRef, useState} from 'react';
-import {getDocument, GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
+import {useCallback, useEffect, useRef, useState} from 'react';
+import {getDocument, GlobalWorkerOptions, PDFDocumentProxy} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
-  createHighlight, deleteHighlight, DocumentRecord, getPosition, Highlight, HighlightRect,
-  listHighlights, listOcrPages, Note, saveOcrPage, savePosition, updateHighlight,
+  createHighlight, deleteHighlight, getPosition, Highlight, HighlightRect,
+  listHighlights, listOcrPages, saveOcrPage, savePosition, updateHighlight,
 } from './api';
 import './pdf-reader.css';
 import {OcrWord, recognizeCanvas} from './ocr';
@@ -12,7 +12,7 @@ import {useAutoDismiss} from './useAutoDismiss';
 GlobalWorkerOptions.workerSrc = workerUrl;
 
 import {PdfThumbnail, ContinuousPdfPage, matchPageText, INK_TAG} from './PdfPages';
-import type {SelectionState, SearchResult, OutlineEntry, PageRegion, AnnotationTool, AnnotationPoint, AnnotationDraft, AnnotationUndoAction, ReaderProps, SourceTraceLocation, SourceTraceNavigation} from './PdfPages';
+import type {SelectionState, SearchResult, OutlineEntry, PageRegion, AnnotationTool, AnnotationPoint, AnnotationDraft, AnnotationUndoAction, ReaderProps} from './PdfPages';
 export type {SourceTraceLocation, SourceTraceNavigation} from './PdfPages';
 export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onPageChange, onBack, onAssistantToggle, assistantOpen, notes = [], onCreatePageNote, onUpdatePageNote, onDeletePageNote, targetPage, targetPageRevision = 0, restoreLastPosition = true, sourceTrace, onSourceTraceNavigate, onSourceTraceReturn, onSourceTraceClose}: ReaderProps) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
