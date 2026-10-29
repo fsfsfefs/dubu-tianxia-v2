@@ -31,7 +31,7 @@ export function GuideDialog({markdown, onClose}: Props) {
     link.href = url; link.download = '读步天下使用指南.md'; link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  return <dialog className="user-guide" ref={dialog} onKeyDown={event => event.stopPropagation()} aria-labelledby="user-guide-title" onCancel={event => {event.preventDefault(); closeGuide();}}>
+  return <dialog className="user-guide" ref={dialog} onKeyDown={event => {event.stopPropagation(); if (event.key === 'Escape' && !event.nativeEvent.isComposing) {event.preventDefault(); closeGuide();}}} aria-labelledby="user-guide-title" onCancel={event => {event.preventDefault(); closeGuide();}}>
     <header className="user-guide-header">
       <div><small>GETTING STARTED</small><h1 id="user-guide-title">{guide.title}</h1><p>功能用途 · 操作方法 · 使用条件</p></div>
       <div className="user-guide-actions"><button onClick={download}>下载 Markdown</button><button className="user-guide-close" aria-label="关闭使用指南" onClick={closeGuide}>关闭 ×</button></div>

@@ -22,7 +22,8 @@ test('guide opens in overview, learning memory and PDF without losing the readin
  await page.getByRole('button',{name:'学习记忆',exact:true}).click();await page.getByRole('button',{name:'使用指南',exact:true}).click();
  await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'关闭使用指南'}).click();
  await page.getByRole('button',{name:'学习空间',exact:true}).click();await page.getByRole('button',{name:'继续学习 →',exact:true}).click();
- const pageInput=page.locator('.page-controls input');await expect(pageInput).toBeVisible();await pageInput.fill('2');await expect(pageInput).toHaveValue('2');
+ await expect(page.getByRole('button',{name:'文字层已就绪'})).toBeVisible();
+ const pageInput=page.locator('.page-controls input');await expect(pageInput).toHaveAttribute('max','2');await pageInput.fill('2');await expect(pageInput).toHaveValue('2');
  await page.getByRole('button',{name:'使用指南',exact:true}).click();await expect(page.getByRole('dialog')).toBeVisible();
  await page.getByRole('button',{name:'关闭使用指南'}).click();await expect(pageInput).toHaveValue('2');
 });

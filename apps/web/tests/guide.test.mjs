@@ -70,3 +70,9 @@ test('guide renders markup as safe text and downloads exactly its source documen
   fireEvent.click(view.getByRole('button',{name:'下载 Markdown'}));assert.equal(await downloaded.text(),source);assert.equal(filename,'读步天下使用指南.md');
  }finally{URL.createObjectURL=originalCreate;URL.revokeObjectURL=originalRevoke;dom.window.HTMLAnchorElement.prototype.click=originalClick;}
 });
+
+test('Escape closes the guide even when its search field contains text',()=>{
+ let closed=0;const view=render(React.createElement(GuideDialog,{markdown,onClose(){closed++;}}));
+ const input=view.getByRole('searchbox',{name:'查找功能'});fireEvent.change(input,{target:{value:'RAG'}});
+ fireEvent.keyDown(input,{key:'Escape'});assert.equal(closed,1);assert.equal(view.queryByRole('dialog'),null);
+});
