@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reader-next-api"
+version = "2.0.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "httpx>=0.28,<1",
+  "keyring>=25,<26",
+  "python-multipart>=0.0.20,<1",
+  "fastembed>=0.8,<0.9",
+  "pypdf>=6,<7",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3,<10"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["reader_next_api*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

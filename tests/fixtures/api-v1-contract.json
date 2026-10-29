@@ -1,0 +1,254 @@
+[
+  {
+    "path": "/api/health",
+    "method": "get"
+  },
+  {
+    "path": "/api/ocr/assets/worker.min.js",
+    "method": "get"
+  },
+  {
+    "path": "/api/ocr/assets/core/{filename}",
+    "method": "get"
+  },
+  {
+    "path": "/api/ocr/assets/lang/{filename}",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents",
+    "method": "get"
+  },
+  {
+    "path": "/api/tasks",
+    "method": "get"
+  },
+  {
+    "path": "/api/tasks/index",
+    "method": "post"
+  },
+  {
+    "path": "/api/tasks/summary",
+    "method": "post"
+  },
+  {
+    "path": "/api/tasks/{task_id}/pause",
+    "method": "post"
+  },
+  {
+    "path": "/api/tasks/{task_id}/cancel",
+    "method": "post"
+  },
+  {
+    "path": "/api/tasks/{task_id}/retry",
+    "method": "post"
+  },
+  {
+    "path": "/api/tasks/finished",
+    "method": "delete"
+  },
+  {
+    "path": "/api/embedding-models",
+    "method": "get"
+  },
+  {
+    "path": "/api/embedding-models/download",
+    "method": "post"
+  },
+  {
+    "path": "/api/embedding-models/import",
+    "method": "post"
+  },
+  {
+    "path": "/api/embedding-models/active",
+    "method": "put"
+  },
+  {
+    "path": "/api/folders",
+    "method": "get"
+  },
+  {
+    "path": "/api/folders",
+    "method": "post"
+  },
+  {
+    "path": "/api/folders/{folder_id}",
+    "method": "put"
+  },
+  {
+    "path": "/api/folders/{folder_id}",
+    "method": "delete"
+  },
+  {
+    "path": "/api/documents",
+    "method": "post"
+  },
+  {
+    "path": "/api/documents/{document_id}",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/folder",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}",
+    "method": "delete"
+  },
+  {
+    "path": "/api/documents/{document_id}/file",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/position",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/position",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/ocr-pages",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/ocr-pages/{page_number}",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/rag/status",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/rag/search",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/chapter-summaries",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/imported-outline",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/learning-structure-import",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/summary-gaps",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/summary-checkpoints/{key}",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/summary-checkpoints/{key}",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/chapter-summaries/{chapter_key}",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/highlights",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/highlights",
+    "method": "post"
+  },
+  {
+    "path": "/api/documents/{document_id}/highlights/{highlight_id}",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/highlights/{highlight_id}",
+    "method": "delete"
+  },
+  {
+    "path": "/api/documents/{document_id}/notes",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/notes",
+    "method": "post"
+  },
+  {
+    "path": "/api/documents/{document_id}/notes/{note_id}",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/notes/{note_id}",
+    "method": "delete"
+  },
+  {
+    "path": "/api/documents/{document_id}/chat",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/chat",
+    "method": "delete"
+  },
+  {
+    "path": "/api/documents/{document_id}/flashcards",
+    "method": "get"
+  },
+  {
+    "path": "/api/documents/{document_id}/flashcards/generate",
+    "method": "post"
+  },
+  {
+    "path": "/api/documents/{document_id}/flashcards",
+    "method": "post"
+  },
+  {
+    "path": "/api/documents/{document_id}/flashcards/{card_id}",
+    "method": "put"
+  },
+  {
+    "path": "/api/documents/{document_id}/flashcards/{card_id}/review",
+    "method": "post"
+  },
+  {
+    "path": "/api/documents/{document_id}/flashcards/{card_id}",
+    "method": "delete"
+  },
+  {
+    "path": "/api/model-profiles",
+    "method": "get"
+  },
+  {
+    "path": "/api/model-profiles",
+    "method": "post"
+  },
+  {
+    "path": "/api/model-profiles/{profile_id}",
+    "method": "delete"
+  },
+  {
+    "path": "/api/model-profiles/test",
+    "method": "post"
+  },
+  {
+    "path": "/api/model-profiles/{profile_id}/test",
+    "method": "post"
+  },
+  {
+    "path": "/api/backup/full",
+    "method": "get"
+  },
+  {
+    "path": "/api/backup/restore",
+    "method": "post"
+  },
+  {
+    "path": "/api/export",
+    "method": "get"
+  },
+  {
+    "path": "/api/chat/stream",
+    "method": "post"
+  }
+]

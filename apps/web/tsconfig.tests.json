@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".tmp/tests",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/api.ts",
+    "src/chapters.ts",
+    "src/useAutoDismiss.ts",
+    "src/features/tasks/TaskCenter.tsx",
+    "src/features/settings/ModelSettings.tsx",
+    "src/features/notes/useNotes.ts"
+  ],
+  "references": []
+}

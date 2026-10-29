@@ -1,0 +1,53 @@
+[
+  {
+    "document_id": "doc",
+    "outline": [
+      {
+        "title": "中文😀",
+        "page": 2,
+        "depth": 0
+      }
+    ],
+    "index": 0,
+    "expected": "doc:ch-c3fce56bb7b83737"
+  },
+  {
+    "document_id": "doc",
+    "outline": [
+      {
+        "title": "A",
+        "page": 2,
+        "depth": 0
+      },
+      {
+        "title": "B",
+        "page": 5,
+        "depth": 0
+      }
+    ],
+    "index": 0,
+    "expected": "doc:ch-0cc7f8766baf1ef1"
+  },
+  {
+    "document_id": "doc",
+    "outline": [
+      {
+        "title": "A",
+        "page": 2,
+        "depth": 0
+      },
+      {
+        "title": "Child",
+        "page": 3,
+        "depth": 1
+      },
+      {
+        "title": "B",
+        "page": 5,
+        "depth": 0
+      }
+    ],
+    "index": 1,
+    "expected": "doc:ch-8ec2845be1ac5ccf"
+  }
+]

@@ -1,0 +1,119 @@
+.highlight-search{
+display:grid!important;
+grid-template-columns:minmax(0,1fr) auto;
+overflow:visible!important;
+padding:8px 12px!important;
+border-bottom:1px solid #30332d}
+.highlight-search input,.highlight-editor input,.highlight-editor textarea{
+min-width:0;
+border:1px solid #454b42;
+background:#22251f;
+color:#eef0e8;
+border-radius:6px;
+padding:8px;
+outline:0}
+.highlight-search button{
+border:0;
+background:transparent;
+color:#bec5ba;
+font-size:18px}
+.highlight-comment{
+margin:2px 6px 7px!important;
+padding:7px 9px!important;
+border-left:2px solid #dbe8a7;
+background:#242820;
+color:#d8ddd3!important;
+text-align:left!important;
+line-height:1.5}
+.annotation-tags{
+display:flex;
+flex-wrap:wrap;
+gap:5px;
+margin:4px 6px 8px}
+.annotation-tags span{
+border-radius:999px;
+background:#dfe9dc;
+color:#42614e;
+padding:3px 7px;
+font-size:10px}
+.highlight-panel .annotation-tags span{
+background:#30382e;
+color:#dbe8a7}
+.highlight-editor{
+display:grid;
+gap:7px;
+padding:6px}
+.highlight-editor textarea{
+min-height:72px;
+resize:vertical}
+.highlight-editor nav{
+display:flex;
+justify-content:flex-end;
+gap:6px}
+.highlight-editor button{
+border:1px solid #4a5146;
+background:#2b3028;
+color:#eef0e8;
+padding:6px 10px;
+border-radius:6px}
+.highlight-editor button.accent{
+background:#dbe8a7;
+color:#223020}
+.selection-actions details{
+position:relative}
+.selection-actions summary{
+list-style:none;
+cursor:pointer;
+border:1px solid #4b5046;
+border-radius:8px;
+padding:8px 12px}
+.selection-actions summary::-webkit-details-marker{
+display:none}
+.selection-ai-menu{
+position:absolute;
+left:0;
+bottom:44px;
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:5px;
+width:220px;
+padding:8px;
+background:#181a17;
+border:1px solid #454940;
+border-radius:10px;
+box-shadow:0 12px 28px #0008}
+.selection-ai-menu button{
+white-space:nowrap}
+.note-title-input,.note-compose-footer input,.note-filter input,.inline-editor input{
+width:100%;
+border:1px solid #ccd5ca;
+background:#fffdf7;
+color:#26352c;
+padding:10px 12px;
+outline:0}
+.note-compose-footer{
+display:grid;
+grid-template-columns:minmax(0,1fr) auto;
+gap:8px}
+.note-filter{
+display:grid;
+grid-template-columns:minmax(0,1fr) auto;
+align-items:center;
+gap:10px;
+padding:0 0 10px}
+.note-filter span{
+color:#7a847c;
+font-size:11px}
+.note-card.pinned{
+border-color:#b5c5ab;
+background:#fbfcf3;
+box-shadow:inset 3px 0 #819864}
+.note-card h3{
+margin:8px 0 4px;
+color:#2f4939;
+font-size:15px}
+.inline-editor{
+display:grid;
+gap:8px}
+.enhanced-notes .annotation-tags{
+margin:8px 0}

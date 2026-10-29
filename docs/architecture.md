@@ -1,0 +1,45 @@
+# 第二版架构
+
+## 功能与模块
+
+| 层 | 模块 | 职责 |
+| --- | --- | --- |
+| 启动 | web/src/main.tsx | 仅挂载React根组件 |
+| 应用协调 | web/src/App.tsx | 页面导航、当前教材及功能之间的协调 |
+| 设置 | web/src/features/settings/ModelSettings.tsx | 模型表单、临时连接测试、向量模型管理 |
+| 任务视图 | web/src/features/tasks/TaskCenter.tsx | 接收任务和回调，展示状态及操作 |
+| 笔记状态 | web/src/features/notes/useNotes.ts | 笔记表单、编辑、导出和异步切书保护 |
+| PDF控制 | web/src/PdfReader.tsx | 阅读、搜索、标注交互及位置管理 |
+| PDF渲染 | web/src/PdfPages.tsx | 缩略图、单页渲染与OCR文字层 |
+| 内容身份 | web/src/chapters.ts、api/chapters.py | 同构章节范围键，使用共享Unicode/层级测试样例 |
+| HTTP适配 | api/main.py、application.py | ASGI入口、应用工厂、生命周期、维护门禁 |
+| 输入契约 | api/schemas.py | 独立Pydantic请求模型 |
+| 路由 | api/routes/ | assets、documents、learning、models、tasks、chat、backup |
+| 资源所有者 | api/runtime.py | 每应用独立仓库、模型适配器、凭据及工作线程；协调恢复 |
+| 持久化门面 | api/repository.py | 保持既有调用接口，组合各领域仓库 |
+| 数据库 | api/repositories/database.py | Schema兼容迁移、连接事务及确定性关闭 |
+| 领域数据操作 | api/repositories/ | documents、learning、retrieval、tasks、profiles |
+| AI适配与算法 | providers、reading_agent、citation_verification、rag | 模型协议、问答编排、证据核验及检索算法 |
+| 后台工作 | background_tasks、summary_tasks | 持久化队列、总结分块、限流与断点 |
+
+上表 api 相对 apps/api/reader_next_api，web 相对 apps/web。
+前端仍仅通过HTTP/SSE访问后端；领域仓库共享数据库配置，通过Repository门面维持旧功能兼容。这里采用小规模门面/分领域混入组合，尚不是严格的独立服务/仓库接口体系。
+
+## 生命周期
+
+导入main模块只创建FastAPI路由定义，不创建数据库、不回填向量、不恢复任务。
+应用lifespan启动Runtime，退出时停止任务线程；create_app可注入隔离Runtime用于测试，不修改模块全局变量。
+MaintenanceMiddleware的访问租约覆盖整个响应，包括SSE和文件流。恢复请求取得独占租约后先停止后台工作，再创建安全快照、恢复并重建资源；正常请求活动时拒绝恢复，恢复期间拒绝新请求。
+模型参数和API Key分别通过配置与CredentialStore访问。第二版凭据服务名为reader-next-v2。
+
+## 章节身份与兼容
+
+不再把目录下标作为新总结身份。范围键包含祖先标题、本节点及子树标题/页码/深度和下一同级边界页；相同内容范围在无关的前置章节插入后保持同一键，子树或范围变化则失效。
+FNV-1a 64位用于本地内容身份，不是安全校验；归档文件仍使用SHA-256。标题、页码等身份信息变化时保留旧记录，但不自动重用到新范围。键有理论哈希碰撞风险，不应充当跨系统永久UUID。
+第一版位置记录仅在标题、起始页、深度及可确定的结束页一致时迁移；目录替换前依据旧目录迁移，无法确认归属的旧位置记录以legacy前缀保留。
+
+## 样式与测试
+
+历史phase文件已按foundation、workspace、library、learning、editorial、annotations归类并展开排版；顺序和规则不变，生产CSS构建哈希仍与基线一致。当前仍是全局CSS，尚未完成CSS Modules隔离。
+后端测试覆盖数据兼容、连接关闭、路由、问答和任务；前端使用Node测试、jsdom和Testing Library，直接编译生产组件，验证任务操作、临时模型测试、跨书异步保护和章节身份。
+后续事项见refactoring.md，不以目录拆分替代实际行为验证。

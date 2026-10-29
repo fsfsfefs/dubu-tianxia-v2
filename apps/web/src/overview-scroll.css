@@ -1,0 +1,22 @@
+@media(min-width:901px){
+  .guided-shell:has(> .book-overview){overflow-x:hidden;overflow-y:auto}
+  .book-overview{box-sizing:border-box;width:80vw;max-width:none;height:auto;min-height:calc(100dvh - 55px);padding-top:28px;padding-bottom:80px;display:block;overflow:visible}
+  .book-overview>.back-link{margin-bottom:18px}
+  .book-overview>.book-summary-panel{max-height:none;overflow:visible}
+  .book-overview>.overview-grid{min-height:0;margin-top:22px;overflow:visible}
+  .overview-grid>.chapter-rail,.overview-grid>.chapter-detail{box-sizing:border-box;min-height:0;max-height:72dvh;overflow-y:auto;overscroll-behavior-y:auto;scrollbar-gutter:stable;-webkit-overflow-scrolling:touch}
+  .overview-grid>.chapter-rail{padding-bottom:56px}
+  .overview-grid>.chapter-detail{max-width:none;padding:0 20px 64px 26px}
+  .overview-grid>.chapter-rail,.overview-grid>.chapter-detail{scrollbar-width:thin;scrollbar-color:#aeb8ae transparent}
+  .overview-grid>.chapter-rail::-webkit-scrollbar,.overview-grid>.chapter-detail::-webkit-scrollbar{width:8px}
+  .overview-grid>.chapter-rail::-webkit-scrollbar-track,.overview-grid>.chapter-detail::-webkit-scrollbar-track{background:transparent}
+  .overview-grid>.chapter-rail::-webkit-scrollbar-thumb,.overview-grid>.chapter-detail::-webkit-scrollbar-thumb{background:#aeb8ae;border:2px solid var(--paper);border-radius:999px}
+  .overview-grid>.chapter-rail::-webkit-scrollbar-thumb:hover,.overview-grid>.chapter-detail::-webkit-scrollbar-thumb:hover{background:#819084}
+}
+
+@media(max-width:900px){
+  .guided-shell:has(> .book-overview){overflow-y:auto}
+  .book-overview{height:auto;min-height:calc(100dvh - 55px);overflow:visible}
+  .book-overview>.overview-grid{overflow:visible}
+  .overview-grid>.chapter-rail,.overview-grid>.chapter-detail{max-height:none;overflow:visible;padding-bottom:24px}
+}

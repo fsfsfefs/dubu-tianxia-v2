@@ -1,0 +1,308 @@
+.panel-tabs{
+grid-template-columns:repeat(3,1fr)}
+
+.note-meta{
+display:flex;
+align-items:center;
+justify-content:space-between}
+
+.note-meta .text-button{
+background:transparent;
+color:#b8c58b;
+padding:0;
+border:0;
+font-size:11px}
+
+.card-actions{
+display:flex;
+gap:3px}
+
+.inline-editor{
+display:grid;
+gap:7px;
+margin:9px 0}
+
+.inline-editor textarea{
+width:100%;
+min-height:82px;
+resize:vertical;
+border:1px solid #41453d;
+background:#121411;
+color:#e8e9e4;
+border-radius:8px;
+padding:9px}
+
+.inline-editor span{
+display:flex;
+justify-content:flex-end;
+gap:6px}
+
+.inline-editor button{
+border:1px solid #41453d;
+background:#292c26;
+color:#dfe1db;
+border-radius:6px;
+padding:5px 9px}
+
+.conversation-tools{
+display:flex;
+justify-content:space-between;
+align-items:center;
+padding:7px 18px;
+border-bottom:1px solid #2e312b;
+color:#848b7e;
+font-size:11px}
+
+.conversation-tools button{
+border:0;
+background:transparent;
+color:#aeb98c;
+font-size:11px}
+.conversation-tools button:disabled{
+opacity:.35}
+
+.cards-workspace{
+min-height:0;
+flex:1;
+display:flex;
+flex-direction:column}
+
+.card-generator{
+padding:14px 18px;
+border-bottom:1px solid #32352f;
+display:flex;
+align-items:center;
+gap:10px}
+
+.card-generator p{
+margin:0;
+flex:1;
+color:#9fa599;
+font-size:12px;
+line-height:1.5}
+
+.card-generator button{
+border:0;
+border-radius:8px;
+background:#dbe8a7;
+color:#1d2415;
+padding:9px 11px;
+font-weight:700}
+.card-generator button:disabled{
+opacity:.4}
+
+.flashcard-list{
+min-height:0;
+flex:1;
+overflow:auto;
+padding:14px;
+display:flex;
+flex-direction:column;
+gap:10px}
+
+.flashcard{
+min-height:128px;
+border:1px solid #3c4136;
+background:linear-gradient(145deg,#282c24,#20231e);
+border-radius:13px;
+padding:13px;
+display:flex;
+flex-direction:column;
+cursor:pointer;
+box-shadow:0 7px 20px #0003}
+
+.flashcard.revealed{
+border-color:#687653;
+background:linear-gradient(145deg,#303628,#24291f)}
+
+.flashcard-meta{
+display:flex;
+justify-content:space-between;
+color:#9eaa89;
+font-size:11px;
+margin-bottom:14px}
+.flashcard-meta button{
+border:0;
+background:transparent;
+color:#a6817a;
+font-size:11px}
+
+.flashcard strong{
+font-size:14px;
+line-height:1.6;
+color:#eceee8}
+.flashcard p{
+margin:12px 0 0;
+padding-top:11px;
+border-top:1px solid #4a503f;
+color:#cfd5c4;
+font-size:13px;
+line-height:1.65}
+.flashcard small{
+margin-top:auto;
+color:#777e72}
+
+.question-recognizer{
+display:grid;
+grid-template-columns:minmax(0,1fr) auto;
+align-items:center;
+gap:8px 12px}
+
+.question-recognizer>div{
+min-width:0}
+.question-recognizer strong{
+display:block;
+color:#304d3c;
+font-size:13px;
+margin-bottom:3px}
+.question-recognizer p{
+margin:0}
+.question-recognizer>span{
+grid-column:1;
+color:#52705d;
+font-size:11px}
+.question-recognizer>button{
+grid-column:2;
+grid-row:1/3;
+white-space:nowrap}
+
+.cards-workspace .compact-manual{
+display:block;
+padding:0;
+border-bottom:1px solid #d9ddd4}
+.cards-workspace .compact-manual>summary{
+cursor:pointer;
+list-style:none;
+padding:10px 18px;
+color:#68766d;
+font-size:12px}
+.cards-workspace .compact-manual>summary::-webkit-details-marker{
+display:none}
+.cards-workspace .compact-manual>summary::after{
+content:'＋';
+float:right}
+.cards-workspace .compact-manual[open]>summary::after{
+content:'−'}
+.cards-workspace .compact-manual>div{
+display:grid;
+grid-template-columns:1fr auto;
+gap:8px;
+padding:0 18px 12px}
+.cards-workspace .compact-manual input{
+min-width:0}
+.cards-workspace .compact-manual textarea{
+grid-column:1;
+min-height:70px}
+.cards-workspace .compact-manual button{
+grid-column:2;
+grid-row:1/3}
+
+.flashcard{
+transition:border-color .16s ease,transform .16s ease}
+.flashcard:hover{
+border-color:#8ea591;
+transform:translateY(-1px)}
+
+.floating-question-card{
+position:fixed;
+z-index:90;
+right:24px;
+top:96px;
+width:min(390px,calc(100vw - 32px));
+max-height:min(620px,calc(100vh - 120px));
+display:flex;
+flex-direction:column;
+background:#fbfaf5;
+border:1px solid #aebdaf;
+box-shadow:0 20px 56px #27372e3d;
+color:#26352c}
+
+.floating-question-card>header{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:12px;
+padding:12px 14px;
+border-bottom:1px solid #d8ddd5;
+background:#e9efe6;
+cursor:move;
+user-select:none;
+touch-action:none}
+.floating-question-card>header>div{
+display:grid;
+gap:2px}
+.floating-question-card>header small{
+color:#6c786f;
+font-size:10px}
+.floating-question-card>header strong{
+font:600 16px/1.3 var(--font-editorial)}
+.floating-question-card>header nav{
+display:flex;
+gap:5px}
+.floating-question-card>header button{
+display:grid;
+place-items:center;
+width:30px;
+height:30px;
+border:1px solid #bac8ba;
+background:#f9faf5;
+color:#3b5848}
+.floating-question-card>header button:disabled{
+opacity:.35}
+.floating-question-card>header button:last-child{
+font-size:18px}
+
+.floating-card-body{
+min-height:0;
+overflow:auto;
+padding:18px}
+.floating-card-body>span{
+color:#6c786f;
+font-size:11px}
+.floating-card-body h3{
+margin:10px 0 18px;
+color:#20372a;
+font:600 18px/1.6 var(--font-editorial)}
+.floating-card-body>section{
+padding:14px 15px;
+border-left:3px solid #66836e;
+background:#f0f4ed}
+.floating-card-body>section small{
+display:block;
+color:#557060;
+font-weight:700;
+margin-bottom:7px}
+.floating-card-body p{
+margin:0;
+white-space:pre-wrap;
+color:#3d5045;
+line-height:1.75}
+
+.floating-question-card>footer{
+display:flex;
+justify-content:flex-end;
+gap:7px;
+padding:11px 14px;
+border-top:1px solid #d8ddd5;
+background:#f6f6f0}
+.floating-question-card>footer button{
+border:1px solid #bdc9bc;
+background:#fbfaf5;
+color:#52655a;
+padding:6px 10px}
+.floating-question-card>footer button.active,.floating-question-card>footer button:last-child{
+background:#e1e9df;
+color:#355844}
+
+@media(max-width:900px){
+.floating-question-card{
+right:12px;
+top:70px;
+max-height:calc(100vh - 86px)}
+.question-recognizer{
+grid-template-columns:1fr}
+.question-recognizer>button{
+grid-column:1;
+grid-row:auto;
+justify-self:start}
+}
