@@ -34,7 +34,6 @@ if ($LASTEXITCODE -ne 0) { throw 'EXE packaging failed.' }
 Copy-Item -LiteralPath docs/windows-desktop.md -Destination (Join-Path $outputRoot 'DubuTianxia/README.zh-CN.md')
 & $buildPython desktop/write-notices.py $outputRoot
 if ($LASTEXITCODE -ne 0) { throw 'License inventory failed.' }
-Compress-Archive -LiteralPath (Join-Path $outputRoot 'DubuTianxia') -DestinationPath (Join-Path $outputRoot 'DubuTianxia-Windows-x64.zip') -Force
-Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $outputRoot 'DubuTianxia-Windows-x64.zip') |
-    Format-List | Out-File -Encoding utf8 (Join-Path $outputRoot 'SHA256.txt')
+& $buildPython desktop/package-archive.py $outputRoot
+if ($LASTEXITCODE -ne 0) { throw 'ZIP packaging failed.' }
 Write-Host "Ready: $outputRoot/DubuTianxia/DubuTianxia.exe"
