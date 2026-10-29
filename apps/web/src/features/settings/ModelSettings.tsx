@@ -89,7 +89,7 @@ export function ModelSettings({profiles, onClose, onSaved}: {profiles: ModelProf
     } catch (reason) { setError(reason instanceof Error ? reason.message : '向量模型导入失败'); }
     finally { setEmbeddingBusy(''); }
   };
-  return <div className="modal-backdrop" onMouseDown={event => {if (event.target === event.currentTarget) onClose();}}><form className="settings-card" role="dialog" aria-modal="true" aria-labelledby="model-settings-title" onSubmit={submit}>
+  return <div className="modal-backdrop" data-feature="settings" onMouseDown={event => {if (event.target === event.currentTarget) onClose();}}><form className="settings-card" role="dialog" aria-modal="true" aria-labelledby="model-settings-title" onSubmit={submit}>
     <div className="settings-title"><div><small>OpenAI-compatible</small><h2 id="model-settings-title">模型配置</h2></div><button type="button" className="ghost" onClick={onClose}>关闭</button></div>
     <div className="settings-body">
       <div className="profile-picker"><select aria-label="选择模型配置" value={selectedId} onChange={event => chooseProfile(event.target.value)}><option value="">新建配置</option>{profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name} · {profile.model}</option>)}</select><button type="button" onClick={() => {setSelectedId(''); setForm(blank); setError(''); setMessage('');}}>＋ 新建</button></div>

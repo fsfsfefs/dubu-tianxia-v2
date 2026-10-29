@@ -23,12 +23,15 @@ function getWorker() {
   return workerPromise;
 }
 
-export async function recognizeCanvas(canvas: HTMLCanvasElement, onProgress: ProgressHandler): Promise<OcrWord[]> {
+let recognitionQueue: Promise<unknown> = Promise.resolve();
+
+export function recognizeCanvas(canvas: HTMLCanvasElement, onProgress: ProgressHandler): Promise<OcrWord[]> {
   const snapshot = document.createElement('canvas');
   snapshot.width = canvas.width;
   snapshot.height = canvas.height;
   snapshot.getContext('2d')?.drawImage(canvas, 0, 0);
 
+  const run = async () => {
   activeProgressHandler = onProgress;
   try {
     const worker = await getWorker();
@@ -40,9 +43,14 @@ export async function recognizeCanvas(canvas: HTMLCanvasElement, onProgress: Pro
     ).filter(word => word.text.trim() && word.confidence >= 15)
       .map(word => ({text: word.text, confidence: word.confidence, bbox: word.bbox}));
   } catch (error) {
-    workerPromise = null;
+    const failed = workerPromise; workerPromise = null;
+    if (failed) await failed.then(worker => worker.terminate(), () => undefined).catch(() => undefined);
     throw new Error(`OCR 识别失败：${error instanceof Error ? error.message : '识别服务初始化失败'}`);
   } finally {
     activeProgressHandler = null;
   }
+  };
+  const pending = recognitionQueue.then(run, run);
+  recognitionQueue = pending.catch(() => undefined);
+  return pending;
 }

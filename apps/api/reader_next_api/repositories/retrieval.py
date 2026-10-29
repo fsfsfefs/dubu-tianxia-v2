@@ -6,6 +6,22 @@ from ..rag import chunk_page_text, cosine_similarity, fts_query, lexical_score, 
 
 
 class RetrievalRepository:
+    def rag_pages_without_chunks(self, connection):
+        return connection.execute("""SELECT page.document_id,page.page_number,page.text FROM ocr_pages page
+          WHERE NOT EXISTS (SELECT 1 FROM rag_chunks chunk WHERE chunk.document_id=page.document_id AND chunk.page_number=page.page_number)""").fetchall()
+
+    def rag_vector_rows(self, connection, stale_model=None):
+        if stale_model is None:
+            return connection.execute('SELECT id,content FROM rag_chunks ORDER BY document_id,page_number,chunk_index').fetchall()
+        return connection.execute('SELECT id,content FROM rag_chunks WHERE embedding IS NULL OR embedding_model IS NULL OR embedding_model != ?', (stale_model,)).fetchall()
+
+    def write_rag_vectors(self, connection, rows, vectors, model):
+        vectors = list(vectors)
+        if len(rows) != len(vectors):
+            raise RuntimeError('向量模型返回条数与原文分块不一致，已取消重建。')
+        connection.executemany('UPDATE rag_chunks SET embedding=?,embedding_model=? WHERE id=?',
+          [(pack_embedding(vector), model, row['id']) for row,vector in zip(rows,vectors)])
+
     def _initialize_rag_index(self, connection: sqlite3.Connection) -> None:
         try:
             connection.execute(
@@ -17,37 +33,6 @@ class RetrievalRepository:
             self.rag_fts_available = True
         except sqlite3.OperationalError:
             self.rag_fts_available = False
-
-
-    def _backfill_rag_index(self, connection: sqlite3.Connection) -> None:
-        pages = connection.execute(
-            """SELECT page.document_id, page.page_number, page.text
-               FROM ocr_pages page
-               WHERE NOT EXISTS (
-                 SELECT 1 FROM rag_chunks chunk
-                 WHERE chunk.document_id = page.document_id
-                   AND chunk.page_number = page.page_number
-               )"""
-        ).fetchall()
-        for page in pages:
-            self._replace_rag_page(
-                connection, page["document_id"], page["page_number"], page["text"]
-            )
-
-
-    def _backfill_rag_vectors(self, connection: sqlite3.Connection) -> None:
-        active_model = self.embedding_models.active_key
-        rows = connection.execute(
-            """SELECT id, content FROM rag_chunks
-               WHERE embedding IS NULL OR embedding_model IS NULL OR embedding_model != ?""",
-            (active_model,),
-        ).fetchall()
-        vectors = self.embedding_models.embed_passages([row["content"] for row in rows])
-        for row, vector in zip(rows, vectors):
-            connection.execute(
-                "UPDATE rag_chunks SET embedding = ?, embedding_model = ? WHERE id = ?",
-                (pack_embedding(vector), active_model, row["id"]),
-            )
 
 
     def _replace_rag_page(
@@ -97,42 +82,6 @@ class RetrievalRepository:
             "chunk_count": int(chunk_count),
             "engine": f"sqlite-fts5+{self.embedding_models.active_key}" if self.rag_fts_available else self.embedding_models.active_key,
         }
-
-
-    def list_embedding_models(self) -> dict:
-        return self.embedding_models.list_models()
-
-
-    def download_embedding_model(self, model_name: str) -> dict:
-        return self.embedding_models.install_download(model_name)
-
-
-    def import_embedding_model(self, name: str, model_name: str, payload: bytes) -> dict:
-        return self.embedding_models.install_archive(name, model_name, payload)
-
-
-    def select_embedding_model(self, model_id: str) -> dict:
-        previous_id = self.embedding_models.active()["id"]
-        model = self.embedding_models.select(model_id)
-        try:
-            count = self.rebuild_rag_vectors()
-        except Exception:
-            self.embedding_models.select(previous_id)
-            raise
-        return {"model": model, "reindexed_chunks": count}
-
-
-    def rebuild_rag_vectors(self) -> int:
-        with self.connect() as connection:
-            rows = connection.execute("SELECT id, content FROM rag_chunks ORDER BY document_id,page_number,chunk_index").fetchall()
-            vectors = self.embedding_models.embed_passages([row["content"] for row in rows])
-            active_model = self.embedding_models.active_key
-            for row, vector in zip(rows, vectors):
-                connection.execute(
-                    "UPDATE rag_chunks SET embedding = ?, embedding_model = ? WHERE id = ?",
-                    (pack_embedding(vector), active_model, row["id"]),
-                )
-        return len(rows)
 
 
     def search_rag(self, document_id: str, question: str, limit: int = 8) -> list[dict]:

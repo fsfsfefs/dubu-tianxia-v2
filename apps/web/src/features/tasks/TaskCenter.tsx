@@ -13,8 +13,8 @@ export function TaskCenter({taskCenterOpen, activeTaskCount, activeDocument, doc
     completed: '已完成', partial: '部分完成', failed: '失败', cancelled: '已取消',
   })[status];
   return <>
-    <button className="task-center-trigger" aria-expanded={taskCenterOpen} onClick={() => onToggle()}>任务中心{activeTaskCount > 0 && <b>{activeTaskCount}</b>}</button>
-    {taskCenterOpen && <aside className="task-center" aria-label="后台任务中心"><header><div><small>BACKGROUND TASKS</small><h2>任务中心</h2></div><button aria-label="关闭任务中心" onClick={() => onClose()}>×</button></header>
+    <button className="task-center-trigger" data-feature="tasks" aria-expanded={taskCenterOpen} onClick={() => onToggle()}>任务中心{activeTaskCount > 0 && <b>{activeTaskCount}</b>}</button>
+    {taskCenterOpen && <aside className="task-center" data-feature="tasks" aria-label="后台任务中心"><header><div><small>BACKGROUND TASKS</small><h2>任务中心</h2></div><button aria-label="关闭任务中心" onClick={() => onClose()}>×</button></header>
       <div className="task-center-actions"><button disabled={!activeDocument} onClick={() => activeDocument && void onIndex([activeDocument.id])}>索引当前教材</button><button disabled={!documents.length} onClick={() => void onIndex(documents.map(item => item.id))}>索引全部教材</button><button disabled={!backgroundTasks.some(task => ['completed', 'partial', 'failed', 'cancelled'].includes(task.status))} onClick={() => void onClear()}>清除已结束</button></div>
       <div className="task-list">{preparing && <article className="task-card"><header><strong>准备总结原文</strong><span>尚未提交后台</span></header><p>{chapterSummaryProgress}</p><button onClick={onCancelPrepare}>取消准备</button></article>}{backgroundTasks.map(task => {
         const percent = task.total > 0 ? Math.min(100, Math.round(task.progress / task.total * 100)) : 0;

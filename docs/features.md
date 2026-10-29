@@ -2,6 +2,8 @@
 
 第二版提示：功能沿用第一版，模块拆分、章节范围键、恢复门禁和8790/5174端口变化见 [第二版优化记录](refactoring.md)。原条目中的main.tsx业务现位于App.tsx及features目录，main.py接口现位于routes目录。
 
+第二版维护补充：总览见features/overview，助读展示见AssistantDock，导航/布局见workspace及usePanelLayout，PDF搜索/标注见features/reader；加入显式数据库迁移、检索编排服务及隔离E2E验证，均是原有能力的工程维护，不新增AI调用入口。
+
 第二版前端模块对应：书架见features/library，问答控制见features/assistant，练习卡见features/practice，笔记见features/notes；shared提供教材访问隔离与学习记录加载。切书/取消不接受旧问答回调，卡片生成仅忽略过期结果；PDF与模型配置按需加载。这些是已有功能的维护与加载优化，不是新增AI入口。
 
 下列历史功能清单的代码核对日期：2026-10-29。核对基线：本地 `530a97e`，对应远端 `bc540ec87630376df58eeb55fbd55cf499cb2531`。

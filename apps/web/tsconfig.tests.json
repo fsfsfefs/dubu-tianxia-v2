@@ -18,7 +18,12 @@
     "src/features/practice/*.tsx",
     "src/features/library/*.tsx",
     "src/features/summary/sourceTrace.ts",
-    "src/vite-env.d.ts"
+    "src/vite-env.d.ts",
+    "src/features/overview/*.tsx",
+    "src/features/assistant/*.tsx",
+    "src/features/assistant/usePanelLayout.ts",
+    "src/features/reader/*.ts",
+    "src/features/workspace/*.ts"
   ],
   "references": []
 }

@@ -187,10 +187,8 @@ max-width:88%;
 padding:11px 13px;
 border-radius:12px;
 line-height:1.65;
-white-space:pre-wrap;
-font-size:14px}
+white-space:pre-wrap}
 .message.user{
-align-self:flex-end;
 background:#dbe8a7;
 color:#1b2117;
 border-bottom-right-radius:4px}

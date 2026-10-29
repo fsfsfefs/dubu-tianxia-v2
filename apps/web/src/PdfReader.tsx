@@ -1,18 +1,20 @@
+import {usePdfSearch} from './features/reader/usePdfSearch';
+import {useAnnotations} from './features/reader/useAnnotations';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {getDocument, GlobalWorkerOptions, PDFDocumentProxy} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
-  createHighlight, deleteHighlight, getPosition, Highlight, HighlightRect,
-  listHighlights, listOcrPages, saveOcrPage, savePosition, updateHighlight,
+  getPosition, Highlight,
+  listHighlights, listOcrPages, savePosition,
 } from './api';
 import './pdf-reader.css';
-import {OcrWord, recognizeCanvas} from './ocr';
+import {OcrWord} from './ocr';
 import {useAutoDismiss} from './useAutoDismiss';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
-import {PdfThumbnail, ContinuousPdfPage, matchPageText, INK_TAG} from './PdfPages';
-import type {SelectionState, SearchResult, OutlineEntry, PageRegion, AnnotationTool, AnnotationPoint, AnnotationDraft, AnnotationUndoAction, ReaderProps} from './PdfPages';
+import {PdfThumbnail, ContinuousPdfPage, INK_TAG} from './PdfPages';
+import type {SelectionState, OutlineEntry, PageRegion, ReaderProps} from './PdfPages';
 export type {SourceTraceLocation, SourceTraceNavigation} from './PdfPages';
 export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onPageChange, onBack, onAssistantToggle, assistantOpen, notes = [], onCreatePageNote, onUpdatePageNote, onDeletePageNote, targetPage, targetPageRevision = 0, restoreLastPosition = true, sourceTrace, onSourceTraceNavigate, onSourceTraceReturn, onSourceTraceClose}: ReaderProps) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -25,21 +27,11 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [error, setError] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
-  const [highlightQuery, setHighlightQuery] = useState('');
-  const [editingHighlight, setEditingHighlight] = useState<string | null>(null);
-  const [highlightComment, setHighlightComment] = useState('');
-  const [highlightTags, setHighlightTags] = useState('');
   const [sidebarMode, setSidebarMode] = useState<'pages' | 'outline' | null>(null);
   const [displayOpen, setDisplayOpen] = useState(false);
   const [paperTone, setPaperTone] = useState(false);
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<PageRegion>(null);
-  const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
-  const [annotationColor, setAnnotationColor] = useState<Highlight['color']>('blue');
-  const [annotationWidth, setAnnotationWidth] = useState(.004);
-  const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
-  const [annotationToolbarOpen, setAnnotationToolbarOpen] = useState(false);
-  const [annotationUndoDepth, setAnnotationUndoDepth] = useState(0);
   const [notePanelOpen, setNotePanelOpen] = useState(false);
   const [stickyDraft, setStickyDraft] = useState('');
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
@@ -48,11 +40,6 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [textSource, setTextSource] = useState<'native' | 'ocr' | 'none'>('none');
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
-  const [query, setQuery] = useState('');
-  const [searching, setSearching] = useState(false);
-  const [searchedPages, setSearchedPages] = useState(0);
-  const [lastSearchQuery, setLastSearchQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const thumbnailListRef = useRef<HTMLDivElement>(null);
   const currentPageRef = useRef(pageNumber);
@@ -65,10 +52,11 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const dragPage = useRef<number | null>(null);
   const scrollFrame = useRef<number | null>(null);
   const pageSources = useRef(new Map<number, 'native' | 'ocr'>());
-  const searchRun = useRef(0);
-  const pageTextCache = useRef(new Map<number, string>());
   const ocrCache = useRef(new Map<number, OcrWord[]>());
-  const annotationUndoStack = useRef<AnnotationUndoAction[]>([]);
+  const {query, setQuery, searching, searchedPages, setSearchedPages, lastSearchQuery, setLastSearchQuery, results, setResults, searchDocument, cancelSearch, pageTextCache} = usePdfSearch(document.id, pdf, setError);
+  const {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
+    highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
+    saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark} = useAnnotations(document, highlights, setHighlights, initialPageDimensions, setError);
   const url = `/api/documents/${document.id}/file`;
   currentPageRef.current = pageNumber;
   currentZoomRef.current = zoom;
@@ -97,8 +85,6 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     const loadingTask = getDocument({url});
     positionReadyRef.current = false;
     pendingRestoreRef.current = null;
-    annotationUndoStack.current = [];
-    setAnnotationUndoDepth(0);
     if (positionSaveTimer.current !== null) window.clearTimeout(positionSaveTimer.current);
     setLoading(true); setError(''); setPdf(null); setSelection(null); setResults([]); setQuery(''); setSearchedPages(0); setLastSearchQuery(''); setTextSource('none'); setOcrProgress(null); pageTextCache.current.clear(); ocrCache.current.clear();
     Promise.all([getPosition(document.id), listHighlights(document.id), listOcrPages(document.id).catch(() => []), loadingTask.promise])
@@ -201,8 +187,6 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         scroller.scrollTop = Math.max(0, page.offsetTop + pending.pageOffset * page.offsetHeight - focusOffset);
         readingPositionRef.current = pending;
         pendingRestoreRef.current = null;
-    annotationUndoStack.current = [];
-    setAnnotationUndoDepth(0);
         readyFrame = window.requestAnimationFrame(() => { positionReadyRef.current = true; });
       });
     });
@@ -235,16 +219,9 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     setSelection(text && rects.length ? {page: selectedPage, text, rects} : null);
   };
 
-  const saveHighlight = async () => {
-    if (!selection) return;
-    try {
-      const highlight = await createHighlight(document.id, {
-        page_number: selection.page, text: selection.text, rects: selection.rects, color: 'yellow', comment: '', tags: [],
-      });
-      setHighlights(items => [...items, highlight]);
-      window.getSelection()?.removeAllRanges(); setSelection(null);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '保存高亮失败'); }
-  };
+  const saveHighlight = () => saveTextHighlight(selection, () => {
+    window.getSelection()?.removeAllRanges(); setSelection(null);
+  });
 
   const copySelection = async () => {
     if (!selection) return;
@@ -307,171 +284,6 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   }, []);
 
   const handlePageError = useCallback((message: string) => setError(message), []);
-
-  const recolorHighlight = async (item: Highlight, color: Highlight['color']) => {
-    try {
-      const updated = await updateHighlight(document.id, item.id, {color, comment: item.comment || '', tags: item.tags || []});
-      setHighlights(items => items.map(value => value.id === item.id ? updated : value));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '高亮更新失败'); }
-  };
-
-  const saveHighlightDetails = async (item: Highlight) => {
-    try {
-      const tags = [...new Set(highlightTags.split(/[，,]/).map(tag => tag.trim()).filter(Boolean))].slice(0, 30);
-      const updated = await updateHighlight(document.id, item.id, {color: item.color, comment: highlightComment.trim(), tags});
-      setHighlights(items => items.map(value => value.id === item.id ? updated : value));
-      setEditingHighlight(null);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '高亮备注保存失败'); }
-  };
-
-  const removeHighlight = async (item: Highlight) => {
-    try {
-      await deleteHighlight(document.id, item.id);
-      setHighlights(items => items.filter(value => value.id !== item.id));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '高亮删除失败'); }
-  };
-
-  const pushAnnotationUndo = (action: AnnotationUndoAction) => {
-    annotationUndoStack.current.push(action);
-    if (annotationUndoStack.current.length > 80) annotationUndoStack.current.shift();
-    setAnnotationUndoDepth(annotationUndoStack.current.length);
-  };
-
-  const createInkSegment = (page: number, rects: HighlightRect[], color: Highlight['color'], tags: string[]) => createHighlight(document.id, {
-    page_number: page,
-    text: `手写标注 · PDF 第 ${page} 页`,
-    rects,
-    color,
-    comment: '',
-    tags,
-  });
-
-  const saveInkAnnotation = async (page: number, points: AnnotationPoint[]) => {
-    const kind = annotationTool === 'marker' ? 'marker' : 'pen';
-    const sampled = points.length <= 1200 ? points : points.filter((_, index) => index % Math.ceil(points.length / 1200) === 0).slice(0, 1200);
-    try {
-      const annotation = await createInkSegment(page, sampled.map(point => ({...point, width: annotationWidth, height: annotationWidth})), annotationColor, [INK_TAG, kind]);
-      setHighlights(items => [...items, annotation]);
-      pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '标注保存失败'); }
-  };
-
-  const eraseInkAt = async (item: Highlight, point: AnnotationPoint) => {
-    if (!item.rects.length) return;
-    const pageRatio = initialPageDimensions.width / Math.max(initialPageDimensions.height, 1);
-    const radius = Math.max(.009, (item.rects[0]?.width || .004) * 1.8);
-    const segments: HighlightRect[][] = [];
-    let segment: HighlightRect[] = [];
-    for (const value of item.rects) {
-      const distance = Math.hypot((value.x - point.x) * pageRatio, value.y - point.y);
-      if (distance <= radius) {
-        if (segment.length > 1) segments.push(segment);
-        segment = [];
-      } else {
-        segment.push(value);
-      }
-    }
-    if (segment.length > 1) segments.push(segment);
-    if (segments.length === 1 && segments[0].length === item.rects.length) return;
-    try {
-      await deleteHighlight(document.id, item.id);
-      const replacements = await Promise.all(segments.map(rects => createInkSegment(item.page_number, rects, item.color, item.tags)));
-      setHighlights(items => [...items.filter(value => value.id !== item.id), ...replacements]);
-      pushAnnotationUndo({type: 'erase', addedIds: replacements.map(value => value.id), removed: item});
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '局部擦除失败'); }
-  };
-
-  const undoAnnotation = async () => {
-    const action = annotationUndoStack.current.pop();
-    if (!action) return;
-    setAnnotationUndoDepth(annotationUndoStack.current.length);
-    try {
-      await Promise.all(action.addedIds.map(id => deleteHighlight(document.id, id)));
-      let restored: Highlight | null = null;
-      if (action.type === 'erase' && action.removed) {
-        restored = await createInkSegment(action.removed.page_number, action.removed.rects, action.removed.color, action.removed.tags);
-      }
-      setHighlights(items => {
-        const remaining = items.filter(item => !action.addedIds.includes(item.id));
-        return restored ? [...remaining, restored] : remaining;
-      });
-    } catch (reason) {
-      annotationUndoStack.current.push(action);
-      setAnnotationUndoDepth(annotationUndoStack.current.length);
-      setError(reason instanceof Error ? reason.message : '撤销标注失败');
-    }
-  };
-
-  const togglePageMark = async (page: number) => {
-    const existing = highlights.find(item => item.page_number === page && item.rects.length === 0);
-    try {
-      if (existing) {
-        await deleteHighlight(document.id, existing.id);
-        setHighlights(items => items.filter(item => item.id !== existing.id));
-      } else {
-        const marker = await createHighlight(document.id, {
-          page_number: page, text: `整页星标 · PDF 第 ${page} 页`, rects: [], color: 'yellow', comment: '', tags: ['星标'],
-        });
-        setHighlights(items => [...items, marker]);
-      }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '整页星标更新失败'); }
-  };
-
-  const searchDocument = async () => {
-    const searchTerm = query.trim();
-    const needle = searchTerm.toLocaleLowerCase();
-    if (!pdf || !needle) { setResults([]); return; }
-    const runId = ++searchRun.current;
-    const matches: SearchResult[] = [];
-    const cachedPages = Array.from(pageTextCache.current.entries())
-      .filter(([page]) => page >= 1 && page <= pdf.numPages)
-      .sort(([left], [right]) => left - right);
-    for (const [page, text] of cachedPages) {
-      const match = matchPageText(page, text, needle);
-      if (match && matches.length < 80) matches.push(match);
-    }
-    const missingPages = Array.from({length: pdf.numPages}, (_, index) => index + 1)
-      .filter(page => !pageTextCache.current.has(page));
-    setError(''); setResults(matches); setSearchedPages(cachedPages.length); setLastSearchQuery(searchTerm);
-    if (!missingPages.length) { setSearching(false); return; }
-    setSearching(true);
-    try {
-      for (const pageIndex of missingPages) {
-        if (runId !== searchRun.current) return;
-        const page = await pdf.getPage(pageIndex);
-        const content = await page.getTextContent();
-        let text = content.items.map(item => 'str' in item ? item.str : '').join(' ');
-        if (text.replace(/\s/g, '').length < 8) {
-          const viewport = page.getViewport({scale: 1.2});
-          const searchCanvas = window.document.createElement('canvas');
-          searchCanvas.width = Math.ceil(viewport.width);
-          searchCanvas.height = Math.ceil(viewport.height);
-          const context = searchCanvas.getContext('2d');
-          if (context) {
-            await page.render({canvas: searchCanvas, canvasContext: context, viewport}).promise;
-            const words = await recognizeCanvas(searchCanvas, () => undefined);
-            text = words.map(word => word.text).join(' ');
-          }
-        }
-        pageTextCache.current.set(pageIndex, text);
-        void saveOcrPage(document.id, pageIndex, text).catch(() => undefined);
-        const match = matchPageText(pageIndex, text, needle);
-        if (match && matches.length < 80) {
-          matches.push(match);
-          matches.sort((left, right) => left.page - right.page);
-          setResults([...matches]);
-        }
-        setSearchedPages(pageTextCache.current.size);
-      }
-      setResults(matches);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '搜索失败'); }
-    finally { if (runId === searchRun.current) setSearching(false); }
-  };
-
-  const cancelSearch = () => {
-    searchRun.current += 1;
-    setSearching(false);
-  };
 
   const regionPoint = (clientX: number, clientY: number, pageElement: HTMLElement) => {
     const bounds = pageElement.getBoundingClientRect();
@@ -538,19 +350,6 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     changePage(sourceTrace.locations[index].page);
   };
 
-  useEffect(() => {
-    if (!annotationToolbarOpen) return;
-    const handleUndoShortcut = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.matches('input, textarea, [contenteditable="true"]')) return;
-      if (event.ctrlKey && !event.shiftKey && event.key.toLocaleLowerCase() === 'z') {
-        event.preventDefault();
-        void undoAnnotation();
-      }
-    };
-    window.addEventListener('keydown', handleUndoShortcut);
-    return () => window.removeEventListener('keydown', handleUndoShortcut);
-  }, [annotationToolbarOpen, annotationUndoDepth]);
 
   return <div className={`pdf-reader original-reader ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
     <div className="reader-toolbar original-toolbar">

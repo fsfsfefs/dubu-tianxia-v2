@@ -796,10 +796,8 @@ background:#476b58;
 color:#fff;
 font:600 11px/1 var(--font-ui)}
 .summary-key-point{
-display:grid;
 grid-template-columns:minmax(130px,22%) 1fr;
-border:1px solid #dbe1d8;
-background:#fffef9}
+border:1px solid #dbe1d8}
 .summary-key-point>strong{
 padding:13px 15px;
 background:#edf2ea;
@@ -811,8 +809,6 @@ padding:13px 16px;
 color:#46574d;
 line-height:1.72}
 .summary-document mark{
-background:#dce9a8;
-color:inherit;
 padding:1px 2px}
 @media(max-width:760px){
 .chapter-summary-content{

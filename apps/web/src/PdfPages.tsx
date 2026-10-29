@@ -32,32 +32,7 @@ export function smoothAnnotationPath(points: Array<Pick<HighlightRect, 'x' | 'y'
 export type SourceTraceLocation = {page: number; snippet: string; score: number};
 export type SourceTraceNavigation = {query: string; summaryKey: string; locations: SourceTraceLocation[]; index: number};
 
-export function matchPageText(page: number, sourceText: string, needle: string): SearchResult | null {
-  const text = sourceText.replace(/\s+/g, ' ').trim();
-  const normalized = text.toLocaleLowerCase();
-  const compactNeedle = needle.replace(/\s+/g, '');
-  const directIndex = normalized.indexOf(needle);
-  let sourceIndex = directIndex;
-
-  if (sourceIndex < 0 && compactNeedle) {
-    const compactIndex = normalized.replace(/\s+/g, '').indexOf(compactNeedle);
-    if (compactIndex < 0) return null;
-    let compactOffset = 0;
-    sourceIndex = 0;
-    while (sourceIndex < normalized.length && compactOffset < compactIndex) {
-      if (!/\s/.test(normalized[sourceIndex])) compactOffset += 1;
-      sourceIndex += 1;
-    }
-  }
-
-  if (sourceIndex < 0) return null;
-  const start = Math.max(0, sourceIndex - 34);
-  const end = Math.min(text.length, sourceIndex + Math.max(needle.length, 70));
-  return {
-    page,
-    snippet: `${start ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`,
-  };
-}
+export {matchPageText} from './features/reader/searchText';
 
 export type ReaderProps = {
   document: DocumentRecord;
@@ -210,10 +185,12 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       await page.render({canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0]}).promise;
       if (currentRender !== renderId.current) return;
       const textContent = await page.getTextContent();
+      if (currentRender !== renderId.current) return;
       const nativeText = textContent.items.map(item => 'str' in item ? item.str : '').join(' ').trim();
       if (nativeText.replace(/\s/g, '').length >= 8) {
         const textLayer = new TextLayer({textContentSource: textContent, container, viewport});
         await textLayer.render();
+        if (currentRender !== renderId.current) return;
         pageTextCache.current.set(pageNumber, nativeText);
         void saveOcrPage(documentId, pageNumber, nativeText).catch(() => undefined);
         onTextReady(pageNumber, nativeText, 'native');
@@ -221,7 +198,8 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
         onOcrProgress(pageNumber, 0);
         let words = ocrCache.current.get(pageNumber);
         if (!words) {
-          words = await recognizeCanvas(canvas, progress => onOcrProgress(pageNumber, Math.round(progress * 100)));
+          words = await recognizeCanvas(canvas, progress => {if (currentRender === renderId.current) onOcrProgress(pageNumber, Math.round(progress * 100));});
+          if (currentRender !== renderId.current) return;
           ocrCache.current.set(pageNumber, words);
         }
         if (currentRender !== renderId.current) return;
@@ -242,7 +220,7 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
         void saveOcrPage(documentId, pageNumber, recognizedText).catch(() => undefined);
         onTextReady(pageNumber, recognizedText, 'ocr');
       }
-    }).catch(reason => onError(reason instanceof Error ? reason.message : `第 ${pageNumber} 页渲染失败`))
+    }).catch(reason => {if (currentRender === renderId.current) onError(reason instanceof Error ? reason.message : `第 ${pageNumber} 页渲染失败`);})
       .finally(() => {
         if (currentRender === renderId.current) {
           onOcrProgress(pageNumber, null);
