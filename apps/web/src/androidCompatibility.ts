@@ -1,5 +1,29 @@
 /** APIs absent in Android 14's factory WebView but used by current PDF.js. */
 export function installAndroidCompatibility() {
+  if (typeof ReadableStream !== 'undefined') {
+    const prototype = ReadableStream.prototype as unknown as Record<PropertyKey, unknown>;
+    if (typeof prototype.values !== 'function') {
+      Object.defineProperty(prototype, 'values', {configurable: true, writable: true,
+        value: async function*(this: ReadableStream<unknown>, options: {preventCancel?: boolean} = {}) {
+          const reader = this.getReader();
+          let finished = false;
+          try {
+            while (true) {
+              const result = await reader.read();
+              if (result.done) {finished = true; return;}
+              yield result.value;
+            }
+          } finally {
+            try {if (!finished && !options.preventCancel) await reader.cancel();}
+            finally {reader.releaseLock();}
+          }
+        },
+      });
+    }
+    if (typeof prototype[Symbol.asyncIterator] !== 'function') {
+      Object.defineProperty(prototype, Symbol.asyncIterator, {configurable: true, writable: true, value: prototype.values});
+    }
+  }
   if (typeof (Promise as unknown as {withResolvers?: unknown}).withResolvers !== 'function') {
     Object.defineProperty(Promise, 'withResolvers', {configurable: true, writable: true,
       value: function(this: PromiseConstructor) {
