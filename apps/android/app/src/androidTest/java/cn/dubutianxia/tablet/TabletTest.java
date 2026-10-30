@@ -24,6 +24,40 @@ public class TabletTest {
         while(System.currentTimeMillis()<deadline){if("true".equals(evaluate("document.body.innerText.includes('打开使用指南')")))return;Thread.sleep(300);}
         fail("Offline native UI did not load");
     }
+    private void awaitJs(String script,long timeout) throws Exception {
+        long deadline=System.currentTimeMillis()+timeout;
+        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(script)))return;Thread.sleep(250);}
+        fail("Native WebView condition timed out: "+script);
+    }
+    @Test public void nativePdfAndRealOfflineOcr() throws Exception {
+        ready();
+        for(boolean scanned:new boolean[]{false,true}) {
+            android.graphics.pdf.PdfDocument pdf=new android.graphics.pdf.PdfDocument();
+            android.graphics.pdf.PdfDocument.Page page=pdf.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(600,800,1).create());
+            android.graphics.Paint paint=new android.graphics.Paint();paint.setColor(android.graphics.Color.BLACK);paint.setTextSize(36);
+            if(scanned){
+                android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(1200,1600,android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas canvas=new android.graphics.Canvas(bitmap);canvas.drawColor(android.graphics.Color.WHITE);paint.setTextSize(72);canvas.drawText("SCANNED TABLET TEST",80,200,paint);
+                page.getCanvas().drawBitmap(bitmap,null,new android.graphics.Rect(0,0,600,800),null);
+            }else{page.getCanvas().drawText("NATIVE TABLET TEST",40,100,paint);}
+            pdf.finishPage(page);java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();pdf.writeTo(bytes);pdf.close();
+            String name=scanned?"Android Scan Fixture":"Android Text Fixture";
+            java.net.HttpURLConnection request=(java.net.HttpURLConnection)new java.net.URL("http://127.0.0.1:18894/api/documents").openConnection();
+            request.setRequestMethod("POST");request.setDoOutput(true);request.setRequestProperty("Cookie",android.webkit.CookieManager.getInstance().getCookie("http://127.0.0.1:18894"));request.setRequestProperty("Content-Type","multipart/form-data; boundary=TabletFixtureBoundary");
+            try(java.io.OutputStream out=request.getOutputStream()){
+                out.write(("--TabletFixtureBoundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\""+name+".pdf\"\r\nContent-Type: application/pdf\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));out.write(bytes.toByteArray());out.write("\r\n--TabletFixtureBoundary--\r\n".getBytes());
+            }
+            assertEquals(201,request.getResponseCode());request.disconnect();
+            evaluate("location.reload()");ready();
+            evaluate("Array.from(document.querySelectorAll('.library-book')).find(e=>e.innerText.includes('"+name+"')).querySelector('button').click()");
+            awaitJs("Array.from(document.querySelectorAll('button')).some(b=>b.innerText.includes('继续 PDF'))",30000);
+            evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.innerText.includes('继续 PDF')).click()");
+            awaitJs("Boolean(document.querySelector('.continuous-page canvas')?.width)",30000);
+            awaitJs(scanned?"document.body.innerText.includes('OCR 文字可选')":"document.body.innerText.includes('文字层已就绪')",90000);
+            awaitJs("Boolean(document.querySelector('.textLayer')?.innerText.includes('TABLET'))",10000);
+            evaluate("location.reload()");ready();
+        }
+    }
     @Test public void offlineBackendAndOcrResources() throws Exception {
         ready(); String report=Python.getInstance().getModule("reader_next_api.android_backend").callAttr("probe").toString();
         assertTrue(report,report.contains("\"builtin_retrieval\": true"));assertTrue(report,report.contains("traineddata.gz\": 200"));
