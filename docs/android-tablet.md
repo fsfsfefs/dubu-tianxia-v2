@@ -18,4 +18,4 @@
 
 CI构建测试签名APK，在Android14模拟器检查离线启动、OCR资源、系统密钥加密及旋转布局。CI测试签名不作为个人正式升级签名使用。依赖固定见android/requirements.txt；Chaquopy17.2提供FTS5，pydantic-core安卓轮子来自Flet官方包仓库。参考：[Chaquopy](https://chaquo.com/chaquopy/doc/current/android.html)、[Flet原生轮子](https://pypi.flet.dev/pydantic_core/)。
 
-2026-10-30已通过APK构建与Android14模拟器3项验证：离线首页/本地API/OCR资源、Keystore加密、横竖屏与指南。完整门禁同时通过后端133项、前端37项、浏览器10项。模拟器运行记录40994022263；尚未在用户的联想平板实机验收，真实AI服务仍需自行配置后测试。
+2026-10-30已通过APK构建与Android14模拟器4项验证：离线首页/本地API/OCR资源、Keystore加密、原生PDF与真实扫描页OCR/系统返回、横竖屏与指南。完整门禁同时通过后端133项、前端38项、浏览器10项。模拟器运行记录40998745202；尚未在用户的联想平板实机验收，真实AI服务仍需自行配置后测试。
