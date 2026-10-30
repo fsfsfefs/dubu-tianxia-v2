@@ -50,7 +50,7 @@ public class TabletTest {
             assertEquals(201,request.getResponseCode());request.disconnect();
             evaluate("window.__tabletReloadStamp=1;location.reload()");
             awaitJs("!window.__tabletReloadStamp && document.readyState==='complete' && document.body.innerText.includes('打开使用指南')",30000);
-            evaluate("window.__tabletErrors=[];addEventListener('error',e=>window.__tabletErrors.push(e.message+e.error?.stack));addEventListener('unhandledrejection',e=>window.__tabletErrors.push(String(e.reason)+e.reason?.stack));");
+            evaluate("window.__tabletErrors=[];new MutationObserver(()=>{document.querySelectorAll('.error').forEach(e=>{if(e.innerText&&!window.__tabletErrors.includes(e.innerText))window.__tabletErrors.push(e.innerText);});}).observe(document.body,{subtree:true,childList:true,characterData:true});addEventListener('error',e=>window.__tabletErrors.push(e.message+e.error?.stack));addEventListener('unhandledrejection',e=>window.__tabletErrors.push(String(e.reason)+e.reason?.stack));");
             evaluate("Array.from(document.querySelectorAll('.library-book')).find(e=>e.innerText.includes('"+name+"')).querySelector('button[aria-label^=\"打开教材\"]').click()");
             awaitJs("Array.from(document.querySelectorAll('button')).some(b=>b.innerText.includes('继续 PDF'))",30000);
             evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.innerText.includes('继续 PDF')).click()");
