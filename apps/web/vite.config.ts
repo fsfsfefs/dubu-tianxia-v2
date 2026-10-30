@@ -9,9 +9,10 @@ export default defineConfig(({mode}) => {
     plugins: [react()],
     resolve: {alias: mode === 'android' ? [
       {find: /^pdfjs-dist$/, replacement: 'pdfjs-dist/legacy/build/pdf.mjs'},
-      {find: 'pdfjs-dist/build/pdf.worker.min.mjs', replacement: 'pdfjs-dist/legacy/build/pdf.worker.min.mjs'},
+      {find: /^pdfjs-dist\/build\/pdf.worker.min.mjs\?url$/, replacement: fileURLToPath(new URL('./src/androidPdfWorker.ts', import.meta.url)) + '?worker&url'},
     ] : []},
     build: {manifest: true},
+    worker: {format: 'es'},
     server: {
       port: 5174,
       fs: {allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL('../../docs', import.meta.url))]},

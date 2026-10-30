@@ -7,6 +7,7 @@
   },
   "include": [
     "src/api.ts",
+    "src/androidCompatibility.ts",
     "src/chapters.ts",
     "src/useAutoDismiss.ts",
     "src/features/tasks/TaskCenter.tsx",
