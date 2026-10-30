@@ -27,7 +27,7 @@ public class TabletTest {
     private void awaitJs(String script,long timeout) throws Exception {
         long deadline=System.currentTimeMillis()+timeout;
         while(System.currentTimeMillis()<deadline){if("true".equals(evaluate(script)))return;Thread.sleep(250);}
-        fail("Native WebView condition timed out: "+script);
+        fail("Native WebView condition timed out: "+script+"; page="+evaluate("document.body.innerText.slice(0,2000)"));
     }
     @Test public void nativePdfAndRealOfflineOcr() throws Exception {
         ready();
@@ -48,14 +48,16 @@ public class TabletTest {
                 out.write(("--TabletFixtureBoundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\""+name+".pdf\"\r\nContent-Type: application/pdf\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));out.write(bytes.toByteArray());out.write("\r\n--TabletFixtureBoundary--\r\n".getBytes());
             }
             assertEquals(201,request.getResponseCode());request.disconnect();
-            evaluate("location.reload()");ready();
-            evaluate("Array.from(document.querySelectorAll('.library-book')).find(e=>e.innerText.includes('"+name+"')).querySelector('button').click()");
+            evaluate("window.__tabletReloadStamp=1;location.reload()");
+            awaitJs("!window.__tabletReloadStamp && document.readyState==='complete' && document.body.innerText.includes('打开使用指南')",30000);
+            evaluate("Array.from(document.querySelectorAll('.library-book')).find(e=>e.innerText.includes('"+name+"')).querySelector('button[aria-label^=\"打开教材\"]').click()");
             awaitJs("Array.from(document.querySelectorAll('button')).some(b=>b.innerText.includes('继续 PDF'))",30000);
             evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.innerText.includes('继续 PDF')).click()");
             awaitJs("Boolean(document.querySelector('.continuous-page canvas')?.width)",30000);
             awaitJs(scanned?"document.body.innerText.includes('OCR 文字可选')":"document.body.innerText.includes('文字层已就绪')",90000);
             awaitJs("Boolean(document.querySelector('.textLayer')?.innerText.includes('TABLET'))",10000);
-            evaluate("location.reload()");ready();
+            evaluate("window.__tabletReloadStamp=1;location.reload()");
+            awaitJs("!window.__tabletReloadStamp && document.readyState==='complete' && document.body.innerText.includes('打开使用指南')",30000);
         }
     }
     @Test public void offlineBackendAndOcrResources() throws Exception {
