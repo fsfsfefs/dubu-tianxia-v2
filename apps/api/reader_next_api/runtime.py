@@ -3,7 +3,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
 
-import keyring
 
 from .background_tasks import BackgroundTaskManager
 from .credentials import CredentialStore
@@ -17,17 +16,23 @@ class MaintenanceBusy(Exception):
 
 
 class Runtime:
-    def __init__(self, data_root: Path, ocr_assets: Path):
+    def __init__(self, data_root: Path, ocr_assets: Path, *, credential_store=None, repository_factory=Repository):
         self.data_root = data_root
         self.ocr_assets = ocr_assets
+        self._credential_store = credential_store
+        self._repository_factory = repository_factory
         self._lock = RLock()
         self._active = 0
         self._maintenance = False
 
     def start(self):
-        self.repository = Repository(self.data_root)
+        self.repository = self._repository_factory(self.data_root)
         self.provider = OpenAICompatibleProvider()
-        self.credential_store = CredentialStore(self.data_root, keyring)
+        if self._credential_store is None:
+            import keyring
+            self.credential_store = CredentialStore(self.data_root, keyring)
+        else:
+            self.credential_store = self._credential_store
         self.task_manager = BackgroundTaskManager(self.repository, self.provider, self.credential_store)
 
     def stop(self):
@@ -55,6 +60,6 @@ class Runtime:
             safety = create_full_backup(self.data_root, safety_path)
             counts = install_full_backup(self.data_root, staging)
         finally:
-            self.repository = Repository(self.data_root)
+            self.repository = self._repository_factory(self.data_root)
             self.task_manager = BackgroundTaskManager(self.repository, self.provider, self.credential_store)
         return counts, safety

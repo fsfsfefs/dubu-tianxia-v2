@@ -99,7 +99,7 @@ export function useNotes(activeDocument: DocumentRecord | null, currentPage: num
       '', note.content, '',
     ])].join('\n');
     const url = URL.createObjectURL(new Blob([markdown], {type: 'text/markdown;charset=utf-8'}));
-    const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = `${activeDocument.title}-学习笔记.md`; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = `${activeDocument.title}-学习笔记.md`; window.document.body.append(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return {notes, setNotes, noteDraft, setNoteDraft, noteTitle, setNoteTitle, noteTags, setNoteTags, noteSearch, setNoteSearch, editingNote, setEditingNote, editingContent, setEditingContent, editingTitle, setEditingTitle, editingTags, setEditingTags, addNote, removeNote, createPageStickyNote, updatePageStickyNote, deletePageStickyNote, saveEditedNote, toggleNotePinned, exportNotes};

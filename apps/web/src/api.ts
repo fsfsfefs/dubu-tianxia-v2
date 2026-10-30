@@ -23,7 +23,7 @@ export type EmbeddingModel = {
   dimension: number; size_gb: number; source: 'builtin' | 'download' | 'import';
   status: 'ready' | 'available'; description: string; local_path?: string | null;
 };
-export type EmbeddingModelCatalog = {active_id: string; models: EmbeddingModel[]; presets: EmbeddingModel[]};
+export type EmbeddingModelCatalog = {active_id: string; models: EmbeddingModel[]; presets: EmbeddingModel[]; external_models_supported?: boolean; platform_note?: string};
 export type SummaryGap = {chapter_key: string; title: string; start_page: number; end_page: number; reason: string};
 
 export type BackgroundTask = {

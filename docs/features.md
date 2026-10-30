@@ -1,5 +1,7 @@
 # 读步天下现有功能清单
 
+安卓平板移植见[安卓说明](android-tablet.md)：本地学习＋在线AI，Keystore、私有存储、系统文件选择和前台服务；首版仅内置轻量检索，不提供FastEmbed模型管理。APK验证状态以交付记录为准。
+
 Windows桌面版：desktop.py组合既有API、静态前端与Edge WebView2原生窗口，PyInstaller目录打包，内置Python与中英文OCR资源；独立用户目录支持完整ZIP迁移。本机会话API保护、单实例锁及退出确认，不新增AI调用。无安装器、自动更新或数字签名。见[桌面版使用与构建](windows-desktop.md)。
 
 第二版提示：功能沿用第一版，模块拆分、章节范围键、恢复门禁和8790/5174端口变化见 [第二版优化记录](refactoring.md)。原条目中的main.tsx业务现位于App.tsx及features目录，main.py接口现位于routes目录。

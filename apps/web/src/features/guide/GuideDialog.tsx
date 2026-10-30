@@ -28,7 +28,7 @@ export function GuideDialog({markdown, onClose}: Props) {
   const download = () => {
     const url = URL.createObjectURL(new Blob([markdown], {type: 'text/markdown;charset=utf-8'}));
     const link = window.document.createElement('a');
-    link.href = url; link.download = '读步天下使用指南.md'; link.click();
+    link.href = url; link.download = '读步天下使用指南.md'; document.body.append(link); link.click(); link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return <dialog className="user-guide" ref={dialog} onKeyDown={event => {event.stopPropagation(); if (event.key === 'Escape' && !event.nativeEvent.isComposing) {event.preventDefault(); closeGuide();}}} aria-labelledby="user-guide-title" onCancel={event => {event.preventDefault(); closeGuide();}}>

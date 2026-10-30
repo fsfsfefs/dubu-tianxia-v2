@@ -1,0 +1,26 @@
+/* Loaded only by the Android tablet shell; desktop cascade stays untouched. */
+html[data-platform="android"] { -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+html[data-platform="android"] body { margin: 0; }
+html[data-platform="android"] :is(button, summary, select) { min-height: 44px; touch-action: manipulation; }
+html[data-platform="android"] :is(input, textarea, select) { font-size: max(16px, 1em); }
+html[data-platform="android"] :is(.reader-shell, .reader-panel) { height: 100dvh; }
+html[data-platform="android"] .guided-header { gap: 8px; padding-inline: 16px; }
+html[data-platform="android"] .guided-brand strong { white-space: nowrap; }
+html[data-platform="android"] .main-panel-resizer { min-width: 14px; }
+html[data-platform="android"] .assistant-section-resizer { min-height: 14px; }
+html[data-platform="android"] .original-assistant .assistant-close { min-width: 44px; }
+html[data-platform="android"] .user-guide { max-height: calc(100dvh - 24px); }
+@media (min-width: 961px) and (orientation: landscape) {
+  html[data-platform="android"] .reader-shell.assistant-dock-open { grid-template-columns: minmax(0,1fr) 14px minmax(320px,38%); }
+}
+@media (max-width: 960px), (orientation: portrait) {
+  html[data-platform="android"] .guided-header { flex-wrap: wrap; height: auto; min-height: 64px; }
+  html[data-platform="android"] .guided-header nav { order: 3; width: 100%; justify-content: center; }
+  html[data-platform="android"] .guided-actions { margin-left: auto; gap: 4px; }
+  html[data-platform="android"] .guided-brand strong { font-size: 17px; }
+  html[data-platform="android"] .reader-shell.assistant-dock-open { grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(0,1fr) minmax(260px,43dvh); }
+  html[data-platform="android"] .reader-shell.assistant-dock-open > .reader-panel { height: auto; min-height: 0; grid-row: 1; }
+  html[data-platform="android"] .reader-shell > .original-assistant { position: relative; inset: auto; grid-row: 2; width: 100%; height: auto; max-height: none; border-left: 0; border-top: 1px solid var(--line); box-shadow: none; }
+  html[data-platform="android"] :is(.main-panel-resizer,.assistant-section-resizer) { display: none; }
+  html[data-platform="android"] .overview-grid { grid-template-columns: minmax(0,1fr); }
+}

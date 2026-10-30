@@ -7,6 +7,10 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', 'VITE_');
   return {
     plugins: [react()],
+    resolve: {alias: mode === 'android' ? [
+      {find: /^pdfjs-dist$/, replacement: 'pdfjs-dist/legacy/build/pdf.mjs'},
+      {find: 'pdfjs-dist/build/pdf.worker.min.mjs', replacement: 'pdfjs-dist/legacy/build/pdf.worker.min.mjs'},
+    ] : []},
     build: {manifest: true},
     server: {
       port: 5174,

@@ -12,8 +12,8 @@ from .repositories.database import DatabaseRepository
 class Repository(DocumentsRepository, LearningRepository, RetrievalRepository, TasksRepository, ProfilesRepository, DatabaseRepository):
     """Backward-compatible facade sharing one database and data root."""
 
-    def __init__(self, root):
-        self.embedding_models = EmbeddingModelManager(root)
+    def __init__(self, root, *, embedding_models_factory=EmbeddingModelManager):
+        self.embedding_models = embedding_models_factory(root)
         super().__init__(root)
         self.retrieval = RetrievalService(self, self.embedding_models)
         self.retrieval.initialize()
