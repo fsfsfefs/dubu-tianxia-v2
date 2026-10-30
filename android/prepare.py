@@ -2,6 +2,8 @@
 from pathlib import Path
 import shutil
 import zipfile
+import os
+import subprocess
 
 root = Path(__file__).resolve().parents[1]
 target = root / '.tmp/android-payload'
@@ -9,6 +11,13 @@ python = target / 'python/reader_next_api'
 assets = target / 'assets'
 python.mkdir(parents=True, exist_ok=True)
 assets.mkdir(parents=True, exist_ok=True)
+debug_key = root / '.tmp/android-signing/debug.keystore'
+if not debug_key.is_file():
+    debug_key.parent.mkdir(parents=True, exist_ok=True)
+    tool = str(Path(os.environ['JAVA_HOME']) / 'bin' / ('keytool.exe' if os.name == 'nt' else 'keytool'))
+    subprocess.run([tool, '-genkeypair', '-keystore', str(debug_key), '-storepass', 'android',
+                    '-keypass', 'android', '-alias', 'androiddebugkey', '-keyalg', 'RSA',
+                    '-validity', '10000', '-dname', 'CN=Android Debug'], check=True)
 for source in (root / 'apps/api/reader_next_api').rglob('*.py'):
     if '__pycache__' in source.parts:
         continue
