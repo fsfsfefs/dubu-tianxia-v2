@@ -57,6 +57,8 @@ public class TabletTest {
             awaitJs("Boolean(document.querySelector('.continuous-page canvas')?.width)",30000);
             awaitJs(scanned?"document.body.innerText.includes('OCR 文字可选')":"document.body.innerText.includes('文字层已就绪')",90000);
             awaitJs("Boolean(document.querySelector('.textLayer')?.innerText.includes('TABLET'))",10000);
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
+            awaitJs("Array.from(document.querySelectorAll('button')).some(b=>b.innerText.includes('继续 PDF'))",10000);
             evaluate("window.__tabletReloadStamp=1;location.reload()");
             awaitJs("!window.__tabletReloadStamp && document.readyState==='complete' && document.body.innerText.includes('打开使用指南')",30000);
         }
