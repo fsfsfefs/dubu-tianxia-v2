@@ -75,6 +75,10 @@ export function cutInkPolyline(rects: HighlightRect[], gesture: Point[], ratio: 
   if (points.length === 1) points.push(points[0]);
   const segments: HighlightRect[][] = [];
   let segment: HighlightRect[] = [], changed = false;
+  const appendPoint = (point: HighlightRect) => {
+    const last = segment[segment.length - 1];
+    if (!last || Math.abs(last.x - point.x) > EPS || Math.abs(last.y - point.y) > EPS) segment.push(point);
+  };
   const flush = () => {
     // Each persisted highlight accepts at most 1200 points. Overlap at boundaries.
     for (let i = 0; i < segment.length - 1; i += 1199) segments.push(segment.slice(i, i + 1200));
@@ -94,12 +98,12 @@ export function cutInkPolyline(rects: HighlightRect[], gesture: Point[], ratio: 
       if (end <= cursor) continue;
       changed = true;
       if (start > cursor + EPS) {
-        segment.push(interpolate(from, to, cursor), interpolate(from, to, start));
+        appendPoint(interpolate(from, to, cursor)); appendPoint(interpolate(from, to, start));
         flush();
       } else if (segment.length) flush();
       cursor = Math.max(cursor, end);
     }
-    if (cursor < 1 - EPS) segment.push(interpolate(from, to, cursor), to);
+    if (cursor < 1 - EPS) {appendPoint(interpolate(from, to, cursor)); appendPoint(to);}
     else flush();
   }
   flush();

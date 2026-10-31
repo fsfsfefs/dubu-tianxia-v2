@@ -78,6 +78,7 @@ export function AnnotationLayer(props: Props) {
     }
   };
   const start = (event: React.PointerEvent<SVGSVGElement>, selected: NonNullable<AnnotationTool>) => {
+    event.currentTarget.focus({preventScroll: true});
     const box = svg.current!.getBoundingClientRect(), ratio = box.width / Math.max(1, box.height);
     const current: Gesture = {pointerId: event.pointerId, pointerType: event.pointerType, tool: selected,
       points: [pointAt(event)], radius: eraserSize / (2 * Math.max(1, box.height)), ratio,
@@ -135,7 +136,7 @@ export function AnnotationLayer(props: Props) {
   };
   const bounds = svg.current?.getBoundingClientRect();
   const visibleDraft = draft?.page === page ? draft : null;
-  return <svg ref={svg} className={`annotation-layer ${tool ? 'active' : ''} ${tool === 'eraser' ? 'eraser' : ''} ${cursor ? 'erasing-cursor' : ''}`}
+  return <svg ref={svg} tabIndex={-1} aria-label={`PDF 第 ${page} 页标注`} className={`annotation-layer ${tool ? 'active' : ''} ${tool === 'eraser' ? 'eraser' : ''} ${cursor ? 'erasing-cursor' : ''}`}
     viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={down} onPointerMove={move} onPointerUp={up}
     onPointerEnter={observePen} onPointerLeave={() => {if (!gesture.current) {cursorRef.current = null; setCursor(null);}}}
     onPointerCancel={event => {if (gesture.current?.pointerId === event.pointerId) cancel();}}

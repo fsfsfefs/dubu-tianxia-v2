@@ -33,7 +33,8 @@ function setup(overrides={}){
 }
 
 test('held eraser updates every traversed stroke before pointerup, then submits one gesture with the chosen radius',async()=>{
- const t=setup();fireEvent.pointerDown(t.layer,pointer());
+ const t=setup();const input=document.createElement('input');document.body.append(input);input.focus();
+ fireEvent.pointerDown(t.layer,pointer());assert.equal(document.activeElement,t.layer);input.remove();
  fireEvent.pointerMove(t.layer,pointer('mouse',1,300,360));t.flush();assert.equal(t.paths().length,3);
  fireEvent.pointerMove(t.layer,pointer('mouse',1,300,560));t.flush();assert.equal(t.paths().length,4);assert.equal(t.erased.length,0);
  await act(async()=>fireEvent.pointerUp(t.layer,pointer('mouse',1,300,560,0)));

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {eraseInk} from '../.tmp/tests/features/reader/eraseInk.js';
+import {eraseInk,cutInkPolyline} from '../.tmp/tests/features/reader/eraseInk.js';
 
 const rect = (x, y) => ({x, y, width:.004, height:.004});
 const size = {width:595, height:842};
@@ -40,4 +40,14 @@ test('flattened long strokes are split within the persistence point limit', () =
   assert.ok(segments.length);
   assert.ok(segments.every(segment => segment.length >= 2 && segment.length <= 1200));
   assert.deepEqual(segments.at(-1).at(-1), points.at(-1));
+});
+
+test('continuous preview does not multiply duplicated vertices while the eraser moves along a stroke',()=>{
+ let segments=[Array.from({length:100},(_,i)=>rect(.1+i*.008,.5))];
+ for(let step=0;step<40;step++){
+  const x=.2+step*.01;
+  segments=segments.flatMap(segment=>cutInkPolyline(segment,[{x,y:.5},{x:x+.01,y:.5}],595/842,.005)||[segment]);
+ }
+ assert.ok(segments.reduce((sum,segment)=>sum+segment.length,0)<=102);
+ assert.ok(segments.every(segment=>segment.every((point,i)=>!i||point.x!==segment[i-1].x||point.y!==segment[i-1].y)));
 });
