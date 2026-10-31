@@ -1,0 +1,6 @@
+.annotation-layer.erasing-cursor{cursor:none}
+.annotation-eraser-cursor{pointer-events:none;fill:#f7f6ef44;stroke:#355f49;stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-dasharray:4 2}
+.annotation-toolbar.annotation-input-tools{max-width:calc(100% - 24px);flex-wrap:wrap;justify-content:center}
+.annotation-input-tools .pen-only{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.annotation-input-tools .pen-only input{width:16px;height:16px;accent-color:#365f49}
+.annotation-input-tools output{min-width:34px;font-variant-numeric:tabular-nums}

@@ -73,21 +73,25 @@ test('eraser drag from blank space cuts sparse pen and marker lines, persists an
   await expect(page.getByRole('button',{name:'文字层已就绪'})).toBeVisible();
   await page.getByTitle('在 PDF 上绘制标注').click();
   await page.getByRole('button',{name:'橡皮擦',exact:true}).click();
-  const drag=async()=>{
+  await page.getByRole('slider',{name:'橡皮大小'}).fill('24');
+  const drag=async(checkLive=false)=>{
    const box=await page.locator('.annotation-layer').first().boundingBox();
    const x=box.x+box.width*.5,start=box.y+box.height*.24,end=box.y+box.height*.53;
    if(info.project.name==='touch'){
     const client=await page.context().newCDPSession(page);
     await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:start,id:1}]});
     await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:end,id:1}]});
+    if(checkLive){await expect(page.locator('.annotation-stroke.live-erase')).toHaveCount(4);expect((await list()).length).toBe(3);}
     await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await client.detach();
-   } else {await page.mouse.move(x,start);await page.mouse.down();await page.mouse.move(x,end);await page.mouse.up();}
+   } else {await page.mouse.move(x,start);await page.mouse.down();await page.mouse.move(x,end);
+    if(checkLive){await expect(page.locator('.annotation-stroke.live-erase')).toHaveCount(4);expect((await list()).length).toBe(3);await page.screenshot({path:'.tmp/e2e-results/live-eraser-windows.png'});}
+    await page.mouse.up();}
   };
   const cutReady=async()=>{
    const saved=await list(),ink=saved.filter(h=>h.tags.includes('__ink__'));
    return saved.length===5&&ink.length===4&&ink.every(h=>h.comment==='keep metadata'&&(h.rects.at(-1).x<.49||h.rects[0].x>.51));
   };
-  await drag();
+  await drag(true);
   await expect.poll(cutReady).toBe(true);
   const cut=(await list()).filter(h=>h.tags.includes('__ink__'));
   expect(cut).toHaveLength(4);
@@ -102,6 +106,32 @@ test('eraser drag from blank space cuts sparse pen and marker lines, persists an
   await openBook(page,'E2E Native');
   await expect(page.locator('.annotation-stroke:not(.draft)')).toHaveCount(4);
  } finally {for(const h of await list())await page.request.delete(`${endpoint}/${h.id}`);}
+});
+
+test('Windows pen input draws and barrel button temporarily erases; size and pen-only preferences survive reopening',async({page})=>{
+ const docs=(await (await page.request.get('/api/documents')).json()).documents,book=docs.find(d=>d.title==='E2E Native');
+ const endpoint=`/api/documents/${book.id}/highlights`,list=async()=> (await (await page.request.get(endpoint)).json()).highlights;
+ const client=await page.context().newCDPSession(page);
+ try {
+  await openBook(page,'E2E Native');await expect(page.getByRole('button',{name:'文字层已就绪'})).toBeVisible();
+  await page.getByTitle('在 PDF 上绘制标注').click();
+  await page.getByRole('slider',{name:'橡皮大小'}).fill('48');
+  await page.getByLabel('仅手写笔',{exact:true}).check();
+  const box=await page.locator('.annotation-layer').first().boundingBox(),x=box.x+box.width*.3,y=box.y+box.height*.4;
+  const send=(type,px,py,button='left',buttons=1)=>client.send('Input.dispatchMouseEvent',{type,x:px,y:py,button,buttons,pointerType:'pen',force:buttons ? 0.6 : 0,clickCount:1});
+  await send('mousePressed',x,y);await send('mouseMoved',x+160,y);await send('mouseReleased',x+160,y,'left',0);
+  await expect.poll(async()=> (await list()).length).toBe(1);
+  // Right-button pen contact is the standard barrel-button bit, distinct from mouse right-click.
+  await send('mousePressed',x+80,y,'right',2);await send('mouseMoved',x+80,y+30,'right',2);
+  await expect(page.locator('.annotation-stroke.live-erase')).toHaveCount(2);
+  await expect(page.locator('.annotation-eraser-cursor')).toBeVisible();
+  await send('mouseReleased',x+80,y+30,'right',0);
+  await expect.poll(async()=> (await list()).filter(h=>h.rects.at(-1).x<(x+80-box.x)/box.width || h.rects[0].x>(x+80-box.x)/box.width).length).toBe(2);
+  await expect(page.getByRole('button',{name:'画笔',exact:true})).toHaveClass(/active/);
+  await expect(page.locator('.annotation-stroke.live-erase')).toHaveCount(0);
+  await openBook(page,'E2E Native');await page.getByTitle('在 PDF 上绘制标注').click();
+  await expect(page.getByRole('slider',{name:'橡皮大小'})).toHaveValue('48');await expect(page.getByLabel('仅手写笔',{exact:true})).toBeChecked();
+ } finally {await client.detach();await page.getByLabel('仅手写笔',{exact:true}).uncheck().catch(()=>{});await page.getByRole('slider',{name:'橡皮大小'}).fill('24').catch(()=>{});for(const h of await list())await page.request.delete(`${endpoint}/${h.id}`);}
 });
 
 test('scanned PDF: real local OCR creates a selectable, searchable text layer and persists it',async({page})=>{

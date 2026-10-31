@@ -3,6 +3,8 @@ import {GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {saveOcrPage, type DocumentRecord, type Highlight, type HighlightRect, type Note} from './api';
 import './pdf-reader.css';
+import {AnnotationLayer, type InkStyle} from './features/reader/AnnotationLayer';
+import './features/reader/AnnotationLayer.css';
 import {OcrWord, recognizeCanvas} from './ocr';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -17,18 +19,7 @@ export type AnnotationDraft = {page: number; points: AnnotationPoint[]};
 export type AnnotationUndoAction = {type: 'add' | 'erase'; addedIds: string[]; removed?: Highlight[]};
 export const INK_TAG = '__ink__';
 
-export function smoothAnnotationPath(points: Array<Pick<HighlightRect, 'x' | 'y'>>): string {
-  if (!points.length) return '';
-  if (points.length === 1) return `M ${points[0].x * 1000} ${points[0].y * 1000}`;
-  let path = `M ${points[0].x * 1000} ${points[0].y * 1000}`;
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const point = points[index];
-    const next = points[index + 1];
-    path += ` Q ${point.x * 1000} ${point.y * 1000} ${(point.x + next.x) * 500} ${(point.y + next.y) * 500}`;
-  }
-  const last = points[points.length - 1];
-  return `${path} L ${last.x * 1000} ${last.y * 1000}`;
-}
+export {smoothAnnotationPath} from './features/reader/inkPath';
 export type SourceTraceLocation = {page: number; snippet: string; score: number};
 export type SourceTraceNavigation = {query: string; summaryKey: string; locations: SourceTraceLocation[]; index: number};
 
@@ -70,10 +61,12 @@ export type ContinuousPageProps = {
   annotationTool: AnnotationTool;
   annotationColor: Highlight['color'];
   annotationWidth: number;
+  eraserSize: number;
+  penOnly: boolean;
   annotationDraft: AnnotationDraft | null;
   onAnnotationDraft: (draft: AnnotationDraft | null) => void;
-  onAnnotationSave: (page: number, points: AnnotationPoint[]) => void;
-  onAnnotationErase: (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}) => void;
+  onAnnotationSave: (page: number, points: AnnotationPoint[], style: InkStyle) => void;
+  onAnnotationErase: (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}, radius: number) => Promise<void>;
   pageTextCache: React.MutableRefObject<Map<number, string>>;
   ocrCache: React.MutableRefObject<Map<number, OcrWord[]>>;
   onTextReady: (page: number, text: string, source: 'native' | 'ocr') => void;
@@ -140,12 +133,10 @@ export function PdfThumbnail({pdf, pageNumber, current, marked, scrollRoot, onSe
   </div>;
 }
 
-export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDimensions, scrollRoot, highlights, regionMode, region, annotationTool, annotationColor, annotationWidth, annotationDraft, onAnnotationDraft, onAnnotationSave, onAnnotationErase, pageTextCache, ocrCache, onTextReady, onOcrProgress, onError, onMouseUp, onPointerDown, onPointerMove, onPointerUp}: ContinuousPageProps) {
+export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDimensions, scrollRoot, highlights, regionMode, region, annotationTool, annotationColor, annotationWidth, eraserSize, penOnly, annotationDraft, onAnnotationDraft, onAnnotationSave, onAnnotationErase, pageTextCache, ocrCache, onTextReady, onOcrProgress, onError, onMouseUp, onPointerDown, onPointerMove, onPointerUp}: ContinuousPageProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
-  const annotationDraftRef = useRef<AnnotationDraft | null>(null);
-  const eraserGesture = useRef<{pointerId: number; points: AnnotationPoint[]} | null>(null);
   const renderId = useRef(0);
   const [active, setActive] = useState(false);
   const [dimensions, setDimensions] = useState(initialDimensions);
@@ -235,77 +226,6 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
   const pageRegion = region?.page === pageNumber ? region.rect : null;
   const inkAnnotations = highlights.filter(item => item.tags?.includes(INK_TAG));
   const textHighlights = highlights.filter(item => !item.tags?.includes(INK_TAG));
-  const draft = annotationDraft?.page === pageNumber ? annotationDraft : null;
-  useEffect(() => { annotationDraftRef.current = draft; }, [draft]);
-  const annotationPoint = (clientX: number, clientY: number): AnnotationPoint => {
-    const bounds = hostRef.current?.getBoundingClientRect();
-    if (!bounds) return {x: 0, y: 0};
-    return {
-      x: Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width)),
-      y: Math.max(0, Math.min(1, (clientY - bounds.top) / bounds.height)),
-    };
-  };
-  const beginAnnotation = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (!annotationTool || event.button !== 0 || eraserGesture.current || annotationDraftRef.current) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    if (annotationTool === 'eraser') {
-      eraserGesture.current = {pointerId: event.pointerId, points: [annotationPoint(event.clientX, event.clientY)]};
-      return;
-    }
-    const nextDraft = {page: pageNumber, points: [annotationPoint(event.clientX, event.clientY)]};
-    annotationDraftRef.current = nextDraft;
-    onAnnotationDraft(nextDraft);
-  };
-  const moveAnnotation = (event: React.PointerEvent<SVGSVGElement>) => {
-    const erasing = eraserGesture.current;
-    if (erasing?.pointerId === event.pointerId) {
-      event.preventDefault();
-      const coalesced = event.nativeEvent.getCoalescedEvents?.() || [];
-      for (const sample of coalesced.length ? coalesced : [event.nativeEvent]) {
-        const point = annotationPoint(sample.clientX, sample.clientY);
-        const last = erasing.points[erasing.points.length - 1];
-        if (Math.hypot(point.x - last.x, point.y - last.y) >= .002) erasing.points.push(point);
-      }
-      return;
-    }
-    const liveDraft = annotationDraftRef.current;
-    if (!liveDraft || (annotationTool !== 'pen' && annotationTool !== 'marker')) return;
-    const coalesced = event.nativeEvent.getCoalescedEvents?.() || [];
-    const samples = coalesced.length ? coalesced : [event.nativeEvent];
-    const nextPoints = [...liveDraft.points];
-    for (const nativeEvent of samples) {
-      if (nextPoints.length >= 1200) break;
-      const point = annotationPoint(nativeEvent.clientX, nativeEvent.clientY);
-      const last = nextPoints[nextPoints.length - 1];
-      if (!last || Math.hypot(point.x - last.x, point.y - last.y) >= .0007) nextPoints.push(point);
-    }
-    if (nextPoints.length !== liveDraft.points.length) {
-      const nextDraft = {...liveDraft, points: nextPoints};
-      annotationDraftRef.current = nextDraft;
-      onAnnotationDraft(nextDraft);
-    }
-  };
-  const finishAnnotation = (event: React.PointerEvent<SVGSVGElement>) => {
-    const erasing = eraserGesture.current;
-    if (erasing?.pointerId === event.pointerId) {
-      event.preventDefault();
-      erasing.points.push(annotationPoint(event.clientX, event.clientY));
-      eraserGesture.current = null;
-      onAnnotationErase(pageNumber, erasing.points, dimensions);
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-      return;
-    }
-    const liveDraft = annotationDraftRef.current;
-    if (!liveDraft) return;
-    event.preventDefault();
-    const end = annotationPoint(event.clientX, event.clientY);
-    const last = liveDraft.points[liveDraft.points.length - 1];
-    const points = last && Math.hypot(end.x - last.x, end.y - last.y) >= .0007 ? [...liveDraft.points, end] : liveDraft.points;
-    if (points.length > 1) onAnnotationSave(pageNumber, points);
-    annotationDraftRef.current = null;
-    onAnnotationDraft(null);
-  };
   return <div
     ref={hostRef}
     className={`pdf-page continuous-page ${regionMode ? 'region-mode' : ''} ${annotationTool ? 'annotation-mode' : ''}`}
@@ -317,10 +237,10 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       <canvas ref={canvasRef}/>
       <div ref={textLayerRef} className="textLayer"/>
       <div className="highlight-layer">{textHighlights.flatMap(item => item.rects.map((rect, index) => <span key={`${item.id}-${index}`} className={`highlight ${item.color}`} title={item.text} style={{left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`}}/>))}</div>
-      <svg className={`annotation-layer ${annotationTool ? 'active' : ''} ${annotationTool === 'eraser' ? 'eraser' : ''}`} viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={beginAnnotation} onPointerMove={moveAnnotation} onPointerUp={finishAnnotation} onPointerCancel={() => {eraserGesture.current = null; annotationDraftRef.current = null; onAnnotationDraft(null);}} onLostPointerCapture={() => {eraserGesture.current = null; annotationDraftRef.current = null; onAnnotationDraft(null);}}>
-        {inkAnnotations.map(item => <path key={item.id} className={`annotation-stroke ${item.tags.includes('marker') ? 'marker' : 'pen'} ${item.color}`} d={smoothAnnotationPath(item.rects)} fill="none" strokeWidth={(item.rects[0]?.width || .004) * 1000} strokeLinecap="round" strokeLinejoin="round"/>)}
-        {draft && <path className={`annotation-stroke draft ${annotationTool} ${annotationColor}`} d={smoothAnnotationPath(draft.points)} fill="none" strokeWidth={annotationWidth * 1000} strokeLinecap="round" strokeLinejoin="round"/>}
-      </svg>
+      <AnnotationLayer documentId={documentId} page={pageNumber} dimensions={dimensions} zoom={zoom}
+        highlights={inkAnnotations} tool={annotationTool} color={annotationColor} width={annotationWidth}
+        eraserSize={eraserSize} penOnly={penOnly} draft={annotationDraft} onDraft={onAnnotationDraft}
+        onSave={onAnnotationSave} onErase={onAnnotationErase}/>
       {rendering && <div className="page-loading">正在载入第 {pageNumber} 页…</div>}
       {regionMode && !annotationTool && <div className="region-capture" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>{pageRegion && <span style={{left: `${pageRegion.x * 100}%`, top: `${pageRegion.y * 100}%`, width: `${pageRegion.width * 100}%`, height: `${pageRegion.height * 100}%`}}/>}</div>}
     </> : <div className="page-placeholder">PDF {pageNumber}</div>}

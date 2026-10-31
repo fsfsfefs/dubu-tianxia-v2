@@ -54,7 +54,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const pageSources = useRef(new Map<number, 'native' | 'ocr'>());
   const ocrCache = useRef(new Map<number, OcrWord[]>());
   const {query, setQuery, searching, searchedPages, setSearchedPages, lastSearchQuery, setLastSearchQuery, results, setResults, searchDocument, cancelSearch, pageTextCache} = usePdfSearch(document.id, pdf, setError);
-  const {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
+  const {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
     saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark} = useAnnotations(document, highlights, setHighlights, setError);
   const url = `/api/documents/${document.id}/file`;
@@ -379,12 +379,14 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         </div></details>
       </div>
     </div>
-    {annotationToolbarOpen && <div className="annotation-toolbar" aria-label="PDF 标注工具">
+    {annotationToolbarOpen && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
       <button className={annotationTool === 'pen' ? 'active' : ''} onClick={() => setAnnotationTool('pen')}>画笔</button>
       <button className={annotationTool === 'marker' ? 'active' : ''} onClick={() => setAnnotationTool('marker')}>荧光笔</button>
       <button className={annotationTool === 'eraser' ? 'active' : ''} onClick={() => setAnnotationTool('eraser')}>橡皮擦</button>
       <span className="annotation-colors">{(['black', 'red', 'blue', 'pink', 'green', 'yellow'] as Highlight['color'][]).map(color => <button key={color} className={`color ${color} ${annotationColor === color ? 'selected' : ''}`} aria-label={`选择${color}标注色`} onClick={() => setAnnotationColor(color)}/>)}</span>
       <label>粗细<input type="range" min="2" max="16" value={Math.round(annotationWidth * 1000)} onChange={event => setAnnotationWidth(Number(event.target.value) / 1000)}/></label>
+      <label>橡皮大小<input aria-label="橡皮大小" type="range" min="8" max="80" step="2" value={eraserSize} onChange={event => setEraserSize(Number(event.target.value))}/><output>{eraserSize}px</output></label>
+      <label className="pen-only" title="仅接受手写笔和鼠标，触摸不写画"><input type="checkbox" checked={penOnly} onChange={event => setPenOnly(event.target.checked)}/>仅手写笔</label>
       <button disabled={!annotationUndoDepth} title="撤销标注（Ctrl+Z）" onClick={() => void undoAnnotation()}>撤销 Ctrl+Z</button>
       <button onClick={() => {setAnnotationTool(null); setAnnotationDraft(null); setAnnotationToolbarOpen(false);}}>完成</button>
     </div>}
@@ -448,10 +450,12 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
           annotationTool={annotationTool}
           annotationColor={annotationColor}
           annotationWidth={annotationWidth}
+          eraserSize={eraserSize}
+          penOnly={penOnly}
           annotationDraft={annotationDraft}
           onAnnotationDraft={setAnnotationDraft}
-          onAnnotationSave={(page, points) => void saveInkAnnotation(page, points)}
-          onAnnotationErase={(page, points, dimensions) => void eraseInkAt(page, points, dimensions)}
+          onAnnotationSave={(page, points, style) => void saveInkAnnotation(page, points, style)}
+          onAnnotationErase={(page, points, dimensions, radius) => eraseInkAt(page, points, dimensions, radius)}
           pageTextCache={pageTextCache}
           ocrCache={ocrCache}
           onTextReady={handleTextReady}

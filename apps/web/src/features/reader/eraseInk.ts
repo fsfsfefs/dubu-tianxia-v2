@@ -8,7 +8,8 @@ const interpolate = (a: HighlightRect, b: HighlightRect, t: number): HighlightRe
 });
 
 // Match the quadratic curves used by smoothAnnotationPath before cutting them.
-function flatten(rects: HighlightRect[], ratio: number): HighlightRect[] {
+export function flattenInk(rects: HighlightRect[], ratio: number): HighlightRect[] {
+  if (!rects.length) return [];
   const points = [rects[0]];
   for (let i = 1; i < rects.length - 1; i++) {
     const start = points[points.length - 1], control = rects[i];
@@ -61,12 +62,16 @@ function capsule(a: Point, delta: Point, start: Point, end: Point, radius: numbe
 }
 
 /** Cut only ink touched by the gesture; null means no change, [] means fully erased. */
-export function eraseInk(rects: HighlightRect[], gesture: Point[], dimensions: {width: number; height: number}): HighlightRect[][] | null {
-  if (!rects.length || !gesture.length) return null;
+export function eraseInk(rects: HighlightRect[], gesture: Point[], dimensions: {width: number; height: number}, eraserRadius?: number): HighlightRect[][] | null {
   const ratio = dimensions.width / Math.max(1, dimensions.height);
-  const radius = Math.max(.009, (rects[0].width || .004) * 1.8);
+  return cutInkPolyline(flattenInk(rects, ratio), gesture, ratio, eraserRadius ?? Math.max(.009, (rects[0]?.width || .004) * 1.8));
+}
+
+/** Incremental preview uses already flattened paths, avoiding repeated curve smoothing. */
+export function cutInkPolyline(rects: HighlightRect[], gesture: Point[], ratio: number, radius: number): HighlightRect[][] | null {
+  if (!rects.length || !gesture.length) return null;
   const metric = (p: Point): Point => ({x: p.x * ratio, y: p.y});
-  const eraser = gesture.map(metric), points = flatten(rects, ratio);
+  const eraser = gesture.map(metric), points = [...rects];
   if (points.length === 1) points.push(points[0]);
   const segments: HighlightRect[][] = [];
   let segment: HighlightRect[] = [], changed = false;

@@ -4,6 +4,8 @@ import type {Dispatch, SetStateAction} from 'react';
 import type {AnnotationTool, AnnotationPoint, AnnotationDraft, AnnotationUndoAction, SelectionState} from '../../PdfPages';
 import {useDocumentScope} from '../../shared/useDocumentScope';
 import {eraseInk} from './eraseInk';
+import {readAnnotationInput, saveAnnotationInput} from './annotationInput';
+import type {InkStyle} from './AnnotationLayer';
 const INK_TAG = '__ink__';
 
 export function useAnnotations(document: {id: string}, highlights: Highlight[], setHighlights: Dispatch<SetStateAction<Highlight[]>>, setError: (message: string) => void) {
@@ -24,6 +26,10 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
   const [annotationColor, setAnnotationColor] = useState<Highlight['color']>('blue');
   const [annotationWidth, setAnnotationWidth] = useState(.004);
+  const [inputDefaults] = useState(readAnnotationInput);
+  const [eraserSize, setEraserSize] = useState(inputDefaults.eraserSize);
+  const [penOnly, setPenOnly] = useState(inputDefaults.penOnly);
+  useEffect(() => {saveAnnotationInput(eraserSize, penOnly);}, [eraserSize, penOnly]);
   const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
   const [annotationToolbarOpen, setAnnotationToolbarOpen] = useState(false);
   const [annotationUndoDepth, setAnnotationUndoDepth] = useState(0);
@@ -86,13 +92,14 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     tags,
   });
 
-  const saveInkAnnotation = async (page: number, points: AnnotationPoint[]) => {
-    const kind = annotationTool === 'marker' ? 'marker' : 'pen';
+  const saveInkAnnotation = async (page: number, points: AnnotationPoint[], style?: InkStyle) => {
+    const kind = style?.tool || (annotationTool === 'marker' ? 'marker' : 'pen');
+    const width = style?.width ?? annotationWidth, color = style?.color ?? annotationColor;
     const sampled = points.length <= 1200 ? points : points.filter((_, index) => index % Math.ceil(points.length / 1200) === 0).slice(0, 1200);
     const valid = capture();
     return enqueueInk(valid, async () => {
       try {
-        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width: annotationWidth, height: annotationWidth})), annotationColor, [INK_TAG, kind]);
+        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, [INK_TAG, kind]);
         if (!valid()) return;
         commitInk(items => [...items, annotation]);
         pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
@@ -100,13 +107,13 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     });
   };
 
-  const eraseInkAt = async (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}) => {
+  const eraseInkAt = async (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}, radius?: number) => {
     const valid = capture();
     return enqueueInk(valid, async () => {
       const removed: Highlight[] = [], addedIds: string[] = [];
       try {
         for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG))) {
-          const segments = eraseInk(item.rects, points, dimensions);
+          const segments = eraseInk(item.rects, points, dimensions, radius);
           if (!segments) continue;
           const replacements: Highlight[] = [];
           try {
@@ -185,7 +192,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     window.addEventListener('keydown', handleUndoShortcut);
     return () => window.removeEventListener('keydown', handleUndoShortcut);
   }, [document.id, annotationToolbarOpen, annotationUndoDepth]);
-  return {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
+  return {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
     saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark};
 }

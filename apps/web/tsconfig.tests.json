@@ -24,6 +24,7 @@
     "src/features/assistant/*.tsx",
     "src/features/assistant/usePanelLayout.ts",
     "src/features/reader/*.ts",
+    "src/features/reader/*.tsx",
     "src/features/workspace/*.ts",
     "src/features/guide/guideContent.ts",
     "src/features/guide/GuideDialog.tsx"
