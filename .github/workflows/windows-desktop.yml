@@ -27,10 +27,17 @@ jobs:
           $data = Join-Path $PWD '.tmp/desktop-ci-user'
           $p = Start-Process -FilePath dist/windows/DubuTianxia/DubuTianxia.exe -ArgumentList @('--data-dir', $data, '--port', '18792', '--smoke-test', '--smoke-report', $report) -WindowStyle Hidden -PassThru
           if (-not $p.WaitForExit(60000)) { throw 'Native smoke test timed out.' }
+          if (Test-Path $report) { Get-Content $report }
           if ($p.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Native smoke test failed.' }
           $result = Get-Content $report -Raw | ConvertFrom-Json
           if ($result.error -or -not $result.native_ui -or -not $result.vector_runtime) { throw 'Incomplete native smoke report.' }
           Get-Content $report
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-native-diagnostics
+          path: .tmp/desktop-ci-smoke.json
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: DubuTianxia-Windows-x64

@@ -83,8 +83,12 @@ test('eraser drag from blank space cuts sparse pen and marker lines, persists an
     await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await client.detach();
    } else {await page.mouse.move(x,start);await page.mouse.down();await page.mouse.move(x,end);await page.mouse.up();}
   };
+  const cutReady=async()=>{
+   const saved=await list(),ink=saved.filter(h=>h.tags.includes('__ink__'));
+   return saved.length===5&&ink.length===4&&ink.every(h=>h.comment==='keep metadata'&&(h.rects.at(-1).x<.49||h.rects[0].x>.51));
+  };
   await drag();
-  await expect.poll(async()=> (await list()).length).toBe(5);
+  await expect.poll(cutReady).toBe(true);
   const cut=(await list()).filter(h=>h.tags.includes('__ink__'));
   expect(cut).toHaveLength(4);
   expect(cut.every(h=>h.comment==='keep metadata'&&(h.rects.at(-1).x<.49||h.rects[0].x>.51))).toBeTruthy();
@@ -94,7 +98,7 @@ test('eraser drag from blank space cuts sparse pen and marker lines, persists an
   await expect.poll(async()=> (await list()).length).toBe(3);
   await expect(page.getByRole('button',{name:'撤销 Ctrl+Z'})).toBeDisabled();
   await drag();
-  await expect.poll(async()=> (await list()).length).toBe(5);
+  await expect.poll(cutReady).toBe(true);
   await openBook(page,'E2E Native');
   await expect(page.locator('.annotation-stroke:not(.draft)')).toHaveCount(4);
  } finally {for(const h of await list())await page.request.delete(`${endpoint}/${h.id}`);}
