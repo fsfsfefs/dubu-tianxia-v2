@@ -3,11 +3,24 @@ import {createHighlight, deleteHighlight, updateHighlight, type Highlight, type 
 import type {Dispatch, SetStateAction} from 'react';
 import type {AnnotationTool, AnnotationPoint, AnnotationDraft, AnnotationUndoAction, SelectionState} from '../../PdfPages';
 import {useDocumentScope} from '../../shared/useDocumentScope';
+import {eraseInk} from './eraseInk';
 const INK_TAG = '__ink__';
 
-export function useAnnotations(document: {id: string}, highlights: Highlight[], setHighlights: Dispatch<SetStateAction<Highlight[]>>, initialPageDimensions: {width: number; height: number}, setError: (message: string) => void) {
+export function useAnnotations(document: {id: string}, highlights: Highlight[], setHighlights: Dispatch<SetStateAction<Highlight[]>>, setError: (message: string) => void) {
   const capture = useDocumentScope(document.id);
   const annotationUndoStack = useRef<AnnotationUndoAction[]>([]);
+  const inkQueue = useRef(Promise.resolve());
+  const currentHighlights = useRef(highlights);
+  currentHighlights.current = highlights;
+  const commitInk = (change: (items: Highlight[]) => Highlight[]) => {
+    currentHighlights.current = change(currentHighlights.current);
+    setHighlights(change);
+  };
+  const enqueueInk = (valid: () => boolean, operation: () => Promise<void>) => {
+    const task = inkQueue.current.then(async () => {if (valid()) await operation();});
+    inkQueue.current = task.catch(() => undefined);
+    return task;
+  };
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
   const [annotationColor, setAnnotationColor] = useState<Highlight['color']>('blue');
   const [annotationWidth, setAnnotationWidth] = useState(.004);
@@ -64,12 +77,12 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     setAnnotationUndoDepth(annotationUndoStack.current.length);
   };
 
-  const createInkSegment = (page: number, rects: HighlightRect[], color: Highlight['color'], tags: string[]) => createHighlight(document.id, {
+  const createInkSegment = (page: number, rects: HighlightRect[], color: Highlight['color'], tags: string[], comment = '') => createHighlight(document.id, {
     page_number: page,
     text: `手写标注 · PDF 第 ${page} 页`,
     rects,
     color,
-    comment: '',
+    comment,
     tags,
   });
 
@@ -77,63 +90,68 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const kind = annotationTool === 'marker' ? 'marker' : 'pen';
     const sampled = points.length <= 1200 ? points : points.filter((_, index) => index % Math.ceil(points.length / 1200) === 0).slice(0, 1200);
     const valid = capture();
-    try {
-      const annotation = await createInkSegment(page, sampled.map(point => ({...point, width: annotationWidth, height: annotationWidth})), annotationColor, [INK_TAG, kind]);
-      if (!valid()) return;
-      setHighlights(items => [...items, annotation]);
-      pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
-    } catch (reason) { if (valid()) setError(reason instanceof Error ? reason.message : '标注保存失败'); }
+    return enqueueInk(valid, async () => {
+      try {
+        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width: annotationWidth, height: annotationWidth})), annotationColor, [INK_TAG, kind]);
+        if (!valid()) return;
+        commitInk(items => [...items, annotation]);
+        pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
+      } catch (reason) { if (valid()) setError(reason instanceof Error ? reason.message : '标注保存失败'); }
+    });
   };
 
-  const eraseInkAt = async (item: Highlight, point: AnnotationPoint) => {
-    if (!item.rects.length) return;
-    const pageRatio = initialPageDimensions.width / Math.max(initialPageDimensions.height, 1);
-    const radius = Math.max(.009, (item.rects[0]?.width || .004) * 1.8);
-    const segments: HighlightRect[][] = [];
-    let segment: HighlightRect[] = [];
-    for (const value of item.rects) {
-      const distance = Math.hypot((value.x - point.x) * pageRatio, value.y - point.y);
-      if (distance <= radius) {
-        if (segment.length > 1) segments.push(segment);
-        segment = [];
-      } else {
-        segment.push(value);
-      }
-    }
-    if (segment.length > 1) segments.push(segment);
-    if (segments.length === 1 && segments[0].length === item.rects.length) return;
+  const eraseInkAt = async (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}) => {
     const valid = capture();
-    try {
-      await deleteHighlight(document.id, item.id);
-      const replacements = await Promise.all(segments.map(rects => createInkSegment(item.page_number, rects, item.color, item.tags)));
-      if (!valid()) return;
-      setHighlights(items => [...items.filter(value => value.id !== item.id), ...replacements]);
-      pushAnnotationUndo({type: 'erase', addedIds: replacements.map(value => value.id), removed: item});
-    } catch (reason) { if (valid()) setError(reason instanceof Error ? reason.message : '局部擦除失败'); }
+    return enqueueInk(valid, async () => {
+      const removed: Highlight[] = [], addedIds: string[] = [];
+      try {
+        for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG))) {
+          const segments = eraseInk(item.rects, points, dimensions);
+          if (!segments) continue;
+          const replacements: Highlight[] = [];
+          try {
+            // Keep the original until every replacement is saved successfully.
+            for (const rects of segments) replacements.push(await createInkSegment(page, rects, item.color, item.tags, item.comment));
+            await deleteHighlight(document.id, item.id);
+          } catch (reason) {
+            await Promise.allSettled(replacements.map(value => deleteHighlight(document.id, value.id)));
+            throw reason;
+          }
+          if (!valid()) return;
+          commitInk(items => [...items.filter(value => value.id !== item.id), ...replacements]);
+          removed.push(item); addedIds.push(...replacements.map(value => value.id));
+        }
+      } catch (reason) {if (valid()) setError(reason instanceof Error ? reason.message : '局部擦除失败');}
+      finally {if (valid() && removed.length) pushAnnotationUndo({type: 'erase', addedIds, removed});}
+    });
   };
 
   const undoAnnotation = async () => {
-    const action = annotationUndoStack.current.pop();
-    if (!action) return;
-    setAnnotationUndoDepth(annotationUndoStack.current.length);
     const valid = capture();
-    try {
-      await Promise.all(action.addedIds.map(id => deleteHighlight(document.id, id)));
-      let restored: Highlight | null = null;
-      if (action.type === 'erase' && action.removed) {
-        restored = await createInkSegment(action.removed.page_number, action.removed.rects, action.removed.color, action.removed.tags);
-      }
-      if (!valid()) return;
-      setHighlights(items => {
-        const remaining = items.filter(item => !action.addedIds.includes(item.id));
-        return restored ? [...remaining, restored] : remaining;
-      });
-    } catch (reason) {
-      if (!valid()) return;
-      annotationUndoStack.current.push(action);
+    return enqueueInk(valid, async () => {
+      const action = annotationUndoStack.current.pop();
+      if (!action) return;
       setAnnotationUndoDepth(annotationUndoStack.current.length);
-      setError(reason instanceof Error ? reason.message : '撤销标注失败');
-    }
+      const restored: Highlight[] = [];
+      try {
+        for (const item of action.removed || []) restored.push(await createInkSegment(item.page_number, item.rects, item.color, item.tags, item.comment));
+        await Promise.all(action.addedIds.map(id => deleteHighlight(document.id, id)));
+        if (!valid()) return;
+        // Older undo entries refer to the original IDs, which restoration replaces.
+        const ids = new Map((action.removed || []).map((item, index) => [item.id, restored[index].id]));
+        for (const previous of annotationUndoStack.current) previous.addedIds = previous.addedIds.map(id => ids.get(id) || id);
+        commitInk(items => {
+          const remaining = items.filter(item => !action.addedIds.includes(item.id));
+          return [...remaining, ...restored];
+        });
+      } catch (reason) {
+        await Promise.allSettled(restored.map(item => deleteHighlight(document.id, item.id)));
+        if (!valid()) return;
+        annotationUndoStack.current.push(action);
+        setAnnotationUndoDepth(annotationUndoStack.current.length);
+        setError(reason instanceof Error ? reason.message : '撤销标注失败');
+      }
+    });
   };
 
   const togglePageMark = async (page: number) => {

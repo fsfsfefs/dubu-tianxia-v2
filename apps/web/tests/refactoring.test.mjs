@@ -77,10 +77,57 @@ test('search cancellation after awaiting page text suppresses cache writes, OCR 
 
 test('old annotation persistence cannot append into a later A visit or its undo stack',async()=>{
  const pending=deferred();globalThis.fetch=()=>pending.promise;
- function useInk(doc){const [highlights,setHighlights]=React.useState([]);return {...useAnnotations(doc,highlights,setHighlights,{width:595,height:842},()=>{}),highlights};}
- const hook=renderHook(({doc})=>useInk(doc),{initialProps:{doc:A}});let task;act(()=>{task=hook.result.current.saveInkAnnotation(1,[{x:.1,y:.1},{x:.2,y:.2}]);});hook.rerender({doc:B});hook.rerender({doc:A});
+ function useInk(doc){const [highlights,setHighlights]=React.useState([]);return {...useAnnotations(doc,highlights,setHighlights,()=>{}),highlights};}
+ const hook=renderHook(({doc})=>useInk(doc),{initialProps:{doc:A}});let task;await act(async()=>{task=hook.result.current.saveInkAnnotation(1,[{x:.1,y:.1},{x:.2,y:.2}]);await Promise.resolve();});hook.rerender({doc:B});hook.rerender({doc:A});
  await act(async()=>{pending.resolve(response({highlight:{id:'old'}}));await task;});
  assert.deepEqual(hook.result.current.highlights,[]);assert.equal(hook.result.current.annotationUndoDepth,0);
+});
+
+function inkHarness(initial = [], failCreate = () => false) {
+ const stored = new Map(initial.map(item=>[item.id,item])), errors=[];let next=0;
+ globalThis.fetch=async(url,options)=>{
+  if(options.method==='POST'){
+   if(failCreate(++next))return new Response(JSON.stringify({detail:'test save failure'}),{status:500});
+   const item={...JSON.parse(options.body),id:`new-${next}`,document_id:'A'};stored.set(item.id,item);return response({highlight:item});
+  }
+  if(options.method==='DELETE'){stored.delete(String(url).split('/').at(-1));return new Response(null,{status:204});}
+  throw new Error(`Unexpected ${url}`);
+ };
+ const hook=renderHook(()=>{const [highlights,setHighlights]=React.useState(initial);return {...useAnnotations(A,highlights,setHighlights,message=>errors.push(message)),highlights};});
+ return {hook,stored,errors};
+}
+const ink = (id,page=1,tags=['__ink__','pen'])=>({id,page_number:page,rects:[{x:.1,y:.5,width:.004,height:.004},{x:.9,y:.5,width:.004,height:.004}],color:'red',comment:'kept comment',tags,text:'ink'});
+const pageSize={width:595,height:842};
+
+test('drag erases every touched ink stroke in one undo step and preserves text highlights, other pages and metadata',async()=>{
+ const original=[ink('pen'),ink('marker',1,['__ink__','marker']),ink('other-page',2),ink('text',1,[])];
+ const {hook,stored,errors}=inkHarness(original);
+ await act(async()=>{await hook.result.current.eraseInkAt(1,[{x:.5,y:.2},{x:.5,y:.8}],pageSize);});
+ assert.equal(stored.size,6);assert.equal(hook.result.current.annotationUndoDepth,1);
+ assert.ok(stored.has('other-page')&&stored.has('text'));assert.ok(!stored.has('pen')&&!stored.has('marker'));
+ assert.ok([...stored.values()].every(item=>item.comment==='kept comment'&&item.color==='red'));
+ await act(async()=>{await hook.result.current.undoAnnotation();});
+ assert.equal(stored.size,4);assert.equal(hook.result.current.highlights.length,4);assert.deepEqual(errors,[]);
+});
+
+test('queued drawing, multiple erase gestures and undo use the latest persisted segments and restored IDs',async()=>{
+ const {hook,stored,errors}=inkHarness();
+ await act(async()=>{
+  const draw=hook.result.current.saveInkAnnotation(1,[{x:.1,y:.5},{x:.9,y:.5}]);
+  const first=hook.result.current.eraseInkAt(1,[{x:.4,y:.2},{x:.4,y:.8}],pageSize);
+  const second=hook.result.current.eraseInkAt(1,[{x:.7,y:.2},{x:.7,y:.8}],pageSize);
+  await Promise.all([draw,first,second]);
+ });
+ assert.equal(stored.size,3);assert.equal(hook.result.current.annotationUndoDepth,3);
+ await act(async()=>{await hook.result.current.undoAnnotation();await hook.result.current.undoAnnotation();await hook.result.current.undoAnnotation();});
+ assert.equal(stored.size,0);assert.equal(hook.result.current.highlights.length,0);assert.deepEqual(errors,[]);
+});
+
+test('failed replacement save leaves the original ink in place and removes temporary segments',async()=>{
+ const original=ink('original');const {hook,stored,errors}=inkHarness([original],count=>count===2);
+ await act(async()=>{await hook.result.current.eraseInkAt(1,[{x:.5,y:.5}],pageSize);});
+ assert.deepEqual([...stored.values()],[original]);assert.deepEqual(hook.result.current.highlights,[original]);
+ assert.equal(hook.result.current.annotationUndoDepth,0);assert.equal(errors.length,1);
 });
 
 test('workspace navigation remembers books and explicit page jumps without reloading the reader',()=>{

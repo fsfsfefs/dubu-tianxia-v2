@@ -38,10 +38,11 @@ test('native PDF: pointer drawing, persistence, local erasing, undo and page sea
  await expect(page.locator('.annotation-stroke:not(.draft)')).toHaveCount(1);
  await page.getByTitle('在 PDF 上绘制标注').click();
  await page.getByRole('button',{name:'橡皮擦',exact:true}).click();
- // Erase through an actual hit-tested SVG target, then restore it with the undo control.
- const target=page.locator('.annotation-eraser-target').first();const box=await target.boundingBox();
- if(info.project.name==='touch')await page.touchscreen.tap(box.x+box.width/2,box.y+box.height/2);
- else await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
+ const saved=(await (await page.request.get(`/api/documents/${book.id}/highlights`)).json()).highlights[0];
+ const point=saved.rects[Math.floor(saved.rects.length/2)],box=await page.locator('.annotation-layer').first().boundingBox();
+ const x=box.x+box.width*point.x,y=box.y+box.height*point.y;
+ if(info.project.name==='touch')await page.touchscreen.tap(x,y);
+ else await page.mouse.click(x,y);
  await expect(page.getByRole('button',{name:'撤销 Ctrl+Z'})).toBeEnabled();
  await page.getByRole('button',{name:'撤销 Ctrl+Z'}).click();
  await expect(page.locator('.annotation-stroke:not(.draft)')).toHaveCount(1);
@@ -55,6 +56,48 @@ test('native PDF: pointer drawing, persistence, local erasing, undo and page sea
  // Clean only these generated annotations, in the test-only API instance.
  const highlights=(await (await page.request.get(`/api/documents/${book.id}/highlights`)).json()).highlights;
  for(const h of highlights) await page.request.delete(`/api/documents/${book.id}/highlights/${h.id}`);
+});
+
+test('eraser drag from blank space cuts sparse pen and marker lines, persists and undoes as one gesture',async({page},info)=>{
+ const docs=(await (await page.request.get('/api/documents')).json()).documents;
+ const book=docs.find(d=>d.title==='E2E Native'),endpoint=`/api/documents/${book.id}/highlights`;
+ const list=async()=> (await (await page.request.get(endpoint)).json()).highlights;
+ try {
+  for(const [index,y] of [.32,.46].entries()){
+   const response=await page.request.post(endpoint,{data:{page_number:1,text:'sparse ink',rects:[{x:.2,y,width:.004,height:.004},{x:.8,y,width:.004,height:.004}],color:'red',comment:'keep metadata',tags:['__ink__',index?'marker':'pen']}});
+   expect(response.ok()).toBeTruthy();
+  }
+  const response=await page.request.post(endpoint,{data:{page_number:1,text:'text highlight',rects:[{x:.45,y:.4,width:.1,height:.02}],color:'yellow',comment:'keep text',tags:[]}});
+  expect(response.ok()).toBeTruthy();
+  await openBook(page,'E2E Native');
+  await expect(page.getByRole('button',{name:'文字层已就绪'})).toBeVisible();
+  await page.getByTitle('在 PDF 上绘制标注').click();
+  await page.getByRole('button',{name:'橡皮擦',exact:true}).click();
+  const drag=async()=>{
+   const box=await page.locator('.annotation-layer').first().boundingBox();
+   const x=box.x+box.width*.5,start=box.y+box.height*.24,end=box.y+box.height*.53;
+   if(info.project.name==='touch'){
+    const client=await page.context().newCDPSession(page);
+    await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y:start,id:1}]});
+    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:end,id:1}]});
+    await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await client.detach();
+   } else {await page.mouse.move(x,start);await page.mouse.down();await page.mouse.move(x,end);await page.mouse.up();}
+  };
+  await drag();
+  await expect.poll(async()=> (await list()).length).toBe(5);
+  const cut=(await list()).filter(h=>h.tags.includes('__ink__'));
+  expect(cut).toHaveLength(4);
+  expect(cut.every(h=>h.comment==='keep metadata'&&(h.rects.at(-1).x<.49||h.rects[0].x>.51))).toBeTruthy();
+  expect((await list()).find(h=>h.text==='text highlight').comment).toBe('keep text');
+  if(info.project.name==='mouse')await page.keyboard.press('Control+z');
+  else await page.getByRole('button',{name:'撤销 Ctrl+Z'}).click();
+  await expect.poll(async()=> (await list()).length).toBe(3);
+  await expect(page.getByRole('button',{name:'撤销 Ctrl+Z'})).toBeDisabled();
+  await drag();
+  await expect.poll(async()=> (await list()).length).toBe(5);
+  await openBook(page,'E2E Native');
+  await expect(page.locator('.annotation-stroke:not(.draft)')).toHaveCount(4);
+ } finally {for(const h of await list())await page.request.delete(`${endpoint}/${h.id}`);}
 });
 
 test('scanned PDF: real local OCR creates a selectable, searchable text layer and persists it',async({page})=>{

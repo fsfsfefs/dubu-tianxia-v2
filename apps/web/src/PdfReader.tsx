@@ -56,7 +56,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const {query, setQuery, searching, searchedPages, setSearchedPages, lastSearchQuery, setLastSearchQuery, results, setResults, searchDocument, cancelSearch, pageTextCache} = usePdfSearch(document.id, pdf, setError);
   const {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
-    saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark} = useAnnotations(document, highlights, setHighlights, initialPageDimensions, setError);
+    saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark} = useAnnotations(document, highlights, setHighlights, setError);
   const url = `/api/documents/${document.id}/file`;
   currentPageRef.current = pageNumber;
   currentZoomRef.current = zoom;
@@ -451,7 +451,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
           annotationDraft={annotationDraft}
           onAnnotationDraft={setAnnotationDraft}
           onAnnotationSave={(page, points) => void saveInkAnnotation(page, points)}
-          onAnnotationErase={(item, point) => void eraseInkAt(item, point)}
+          onAnnotationErase={(page, points, dimensions) => void eraseInkAt(page, points, dimensions)}
           pageTextCache={pageTextCache}
           ocrCache={ocrCache}
           onTextReady={handleTextReady}
