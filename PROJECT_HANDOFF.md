@@ -1,6 +1,8 @@
 # 读步天下第二版交接
 
-当前项目目录：`C:\Users\HUAWEI\Documents\Codex\dubu-tianxia-v2`。
+当前项目目录：`D:\dubutianxian完善`。
+
+2026-11-01：结构总结独立3线程池，支持不同教材并发；索引独立单线程。同书互斥，共享跨线程请求间隔与限流冷却，具体见docs/background-tasks.md。
 
 2026-10-31用户要求：后续仅维护、打包和更新Windows端，不同步更新安卓安装包；安卓CI仅保留workflow_dispatch手动入口，不随源码推送自动运行。
 

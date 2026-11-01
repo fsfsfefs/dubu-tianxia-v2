@@ -13,7 +13,7 @@ from .repository import Repository
 
 
 class BackgroundTaskManager:
-    """Run durable local indexing jobs outside request handlers."""
+    """Run durable indexing and bounded concurrent summary jobs."""
 
     def __init__(self, repository: Repository, provider=None, credential_store=None) -> None:
         self.summary_pacer = SummaryPacer()
@@ -21,6 +21,8 @@ class BackgroundTaskManager:
         self.credential_store = credential_store
         self.repository = repository
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="reader-index")
+        self.summary_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="reader-summary")
+        self._summary_document_locks: dict[str, threading.Lock] = {}
         self._lock = threading.RLock()
         self._futures: dict[str, Future] = {}
         self.repository.recover_background_tasks()
@@ -32,6 +34,7 @@ class BackgroundTaskManager:
                     self.repository.request_background_task_cancel(task["id"])
                 except LookupError:
                     pass
+        self.summary_executor.shutdown(wait=True, cancel_futures=True)
         self.executor.shutdown(wait=True, cancel_futures=True)
 
     def list(self) -> list[dict]:
@@ -62,7 +65,8 @@ class BackgroundTaskManager:
             if future is not None and not future.done():
                 return task
             self.repository.update_background_task(task["id"], result={"summary_request": options})
-            self._futures[task["id"]] = self.executor.submit(self._run_summary, task["id"], options)
+            document_lock = self._summary_document_locks.setdefault(document_id, threading.Lock())
+            self._futures[task["id"]] = self.summary_executor.submit(self._run_summary_serialized, document_lock, task["id"], options)
         return self.repository.background_task(task["id"])
 
     def pause(self, task_id: str) -> dict:
@@ -72,6 +76,11 @@ class BackgroundTaskManager:
         if task["status"] not in {"queued", "running"}:
             return task
         return self.repository.update_background_task(task_id, status="paused", cancel_requested=1, message="已请求暂停；正在结束当前调用，已完成分块将保留。")
+
+    def _run_summary_serialized(self, document_lock, task_id: str, options: dict) -> None:
+        # A paused in-flight call must finish before a retry writes the same book.
+        with document_lock:
+            self._run_summary(task_id, options)
 
     def _run_summary(self, task_id: str, options: dict) -> None:
         try:

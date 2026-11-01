@@ -70,3 +70,5 @@ migrations.py在BEGIN IMMEDIATE事务中执行有序迁移，并记录schema_mig
 RetrievalService负责模型管理、选择回滚和向量回填/重建；Repository保留兼容委托。服务与页面写入、查询共用RLock；SQL和向量写入校验仍在RetrievalRepository中。单服务进程支持这些互斥约束，不宣称多个进程共享模型配置已实现分布式锁。
 
 验证环境与浏览器隔离命令见README；压力测试位于test_maintenance_stress.py，浏览器测试使用生成的PDF，不能读取正式.data。
+
+后台调度：索引保留单工作线程，结构总结使用独立3线程池，不同教材并发、同教材互斥。共享SummaryPacer以线程锁原子分配请求起点及限流冷却，不跨await持锁；章节与分块仍按顺序处理。

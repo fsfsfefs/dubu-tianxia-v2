@@ -3,6 +3,7 @@ from .chapters import chapter_key
 import asyncio
 import math
 import time
+import threading
 import httpx
 import hashlib
 import json
@@ -43,25 +44,31 @@ class SummaryPacer:
         self.sleep = sleep or asyncio.sleep
         self.next_allowed = 0.0
         self.interval = 3
+        self._lock = threading.Lock()
 
     def defer(self, seconds):
-        self.interval = max(self.interval, 10)
-        self.next_allowed = max(self.next_allowed, self.clock() + seconds)
+        with self._lock:
+            self.interval = max(self.interval, 10)
+            self.next_allowed = max(self.next_allowed, self.clock() + seconds)
 
     async def wait(self, check, progress):
-        remaining = self.next_allowed - self.clock()
-        if remaining > 120:
-            raise RuntimeError(f"模型仍处于服务商冷却期，请至少等待{math.ceil(remaining)}秒后重新执行。")
         last_second = None
-        while self.clock() < self.next_allowed:
+        while True:
             check()
-            remaining = math.ceil(self.next_allowed - self.clock())
-            if remaining != last_second:
-                progress(f"请求节流/限流冷却等待：{remaining}秒，已完成分块保留。")
-                last_second = remaining
-            await self.sleep(min(0.25, self.next_allowed - self.clock()))
-        check()
-        self.next_allowed = self.clock() + self.interval
+            # Each worker has its own event loop. Reserve a start atomically,
+            # without holding a thread lock across await or the model request.
+            with self._lock:
+                remaining = self.next_allowed - self.clock()
+                if remaining <= 0:
+                    self.next_allowed = self.clock() + self.interval
+                    return
+            if remaining > 120:
+                raise RuntimeError(f"模型仍处于服务商冷却期，请至少等待{math.ceil(remaining)}秒后重新执行。")
+            second = math.ceil(remaining)
+            if second != last_second:
+                progress(f"请求节流/限流冷却等待：{second}秒，已完成分块保留。")
+                last_second = second
+            await self.sleep(min(0.25, remaining))
 
 
 async def stream_block(provider, profile, api_key, source, prompt, check, progress, pacer=None):

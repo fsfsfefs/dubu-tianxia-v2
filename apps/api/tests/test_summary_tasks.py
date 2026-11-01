@@ -424,3 +424,31 @@ def test_direct_manual_save_resolves_gap_without_changing_outline(setup):
     repo.save_chapter_summary(doc, f'{doc}:2', '小章二', 2, 2, 1, '人工总结正文')
     assert repo.list_summary_gaps(doc) == []
     assert repo.get_imported_outline(doc) == before
+
+def test_shared_pacer_spaces_starts_across_worker_event_loops():
+    import asyncio
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    from reader_next_api.summary_tasks import SummaryPacer
+
+    pacer = SummaryPacer()
+    pacer.interval = 0.05
+    ready = threading.Barrier(3)
+    starts = []
+    lock = threading.Lock()
+
+    def worker():
+        ready.wait(timeout=5)
+        async def reserve():
+            await pacer.wait(lambda: None, lambda _: None)
+            with lock:
+                starts.append(time.monotonic())
+        asyncio.run(reserve())
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(worker) for _ in range(3)]
+        for future in futures:
+            future.result(timeout=5)
+    assert len(starts) == 3
+    assert all(later - earlier >= 0.04 for earlier, later in zip(starts, starts[1:]))
