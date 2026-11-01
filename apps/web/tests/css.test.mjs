@@ -9,7 +9,7 @@ test('component scopes preserve the original declaration cascade',()=>{
  const sheets=files.map(file=>fs.readFileSync('src/'+file,'utf8'));
  assert.equal(cascadeDigest(sheets),expected.sha256);
  assert.equal(cascadeDigest(sheets.map(css=>css.replace(/\r?\n/g,'\r\n'))),expected.sha256);
- for(const file of ['features/tasks/TaskCenter.css','features/settings/EmbeddingSettings.css','features/overview/StructureImport.css']){
+ for(const file of ['features/tasks/TaskCenter.css','features/settings/EmbeddingSettings.css','features/overview/StructureImport.css','features/overview/SummaryModel.css']){
   const tree=postcss.parse(fs.readFileSync('src/'+file,'utf8'));
   tree.walkRules(rule=>assert.ok(rule.selectors.every(s=>s.startsWith(':where([data-feature="')),`Unscoped selector in ${file}`));
  }

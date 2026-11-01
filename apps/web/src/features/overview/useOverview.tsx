@@ -1,7 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {chapterKey, chapterPlan as planChapter} from '../../chapters';
 import {reconcileOutline, getImportedOutline, importLearningStructure, listChapterSummaries, listSummaryGaps, saveChapterSummary, listOcrPages, createSummaryTask, pauseSummaryTask,
- type ChapterSummary, type SummaryGap, type DocumentRecord, type BackgroundTask, type Note, type Flashcard} from '../../api';
+ type ModelProfile, type ChapterSummary, type SummaryGap, type DocumentRecord, type BackgroundTask, type Note, type Flashcard} from '../../api';
 import type {OutlineEntry} from '../../pdfOutline';
 import type {SourceTraceLocation, SourceTraceNavigation} from '../../PdfPages';
 import {useDocumentScope} from '../../shared/useDocumentScope';
@@ -26,9 +26,16 @@ function ensureBookGenerationActive(task: BookGenerationTask) {
   if (task.mode === 'cancelled' || task.controller.signal.aborted) throw new DOMException('全书结构生成已取消', 'AbortError');
 }
 
-type Options = {activeDocument: DocumentRecord | null; activeProfile: string; currentPage: number; screen: string; backgroundTasks: BackgroundTask[]; setBackgroundTasks: React.Dispatch<React.SetStateAction<BackgroundTask[]>>; setTaskCenterOpen: (value: boolean) => void; setError: (message: string) => void; notes: Note[]; flashcards: Flashcard[]; enterReader: (document?: DocumentRecord | null, page?: number) => void; goBack: () => void; refreshTasksNow: () => Promise<void>; cancelTask: (id: string) => Promise<void>};
+type Options = {activeDocument: DocumentRecord | null; activeProfile: string; profiles: ModelProfile[]; currentPage: number; screen: string; backgroundTasks: BackgroundTask[]; setBackgroundTasks: React.Dispatch<React.SetStateAction<BackgroundTask[]>>; setTaskCenterOpen: (value: boolean) => void; setError: (message: string) => void; notes: Note[]; flashcards: Flashcard[]; enterReader: (document?: DocumentRecord | null, page?: number) => void; goBack: () => void; refreshTasksNow: () => Promise<void>; cancelTask: (id: string) => Promise<void>};
 type Dependencies = {loadOutline: typeof loadPdfOutline; collectSource: typeof collectChapterSource};
-export function useOverview({activeDocument, activeProfile, currentPage, screen, backgroundTasks, setBackgroundTasks, setTaskCenterOpen, setError, notes, flashcards, enterReader, goBack, refreshTasksNow, cancelTask}: Options, dependencies: Dependencies = {loadOutline: loadPdfOutline, collectSource: collectChapterSource}) {
+export function useOverview({activeDocument, activeProfile, profiles, currentPage, screen, backgroundTasks, setBackgroundTasks, setTaskCenterOpen, setError, notes, flashcards, enterReader, goBack, refreshTasksNow, cancelTask}: Options, dependencies: Dependencies = {loadOutline: loadPdfOutline, collectSource: collectChapterSource}) {
+  const [summaryModelChoices, setSummaryModelChoices] = useState<Record<string, string>>(() => {
+    try {
+      const value = JSON.parse(window.localStorage.getItem('reader-next-summary-models') || '{}');
+      return value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
+    } catch { return {}; }
+  });
   const capture = useDocumentScope(activeDocument?.id);
   const outlineEpoch = useRef(0), traceEpoch = useRef(0);
   const importing = useRef<object | null>(null);
@@ -260,8 +267,20 @@ export function useOverview({activeDocument, activeProfile, currentPage, screen,
   const chapterNotes = selectedChapter ? notes.filter(note => note.page_number && note.page_number >= selectedChapter.page && (!nextChapterPage || note.page_number < nextChapterPage)) : [];
   const chapterFlashcards = selectedChapter ? flashcards.filter(card => card.page_number && card.page_number >= selectedChapter.page && (!nextChapterPage || card.page_number < nextChapterPage)) : [];
   const currentSummaryTask = backgroundTasks.find(task => task.document_id === activeDocument?.id && task.task_type === 'structure-summary' && ['queued', 'running', 'cancelling'].includes(task.status)) || backgroundTasks.find(task => task.document_id === activeDocument?.id && task.task_type === 'structure-summary' && task.status === 'paused');
+  const savedModel = activeDocument ? summaryModelChoices[activeDocument.id] : '';
+  const taskModel = (currentSummaryTask?.result as {summary_request?: {profile_id?: string}} | undefined)?.summary_request?.profile_id;
+  const summaryModelLocked = Boolean(chapterSummaryBusy) || Boolean(currentSummaryTask && ['queued', 'running', 'cancelling'].includes(currentSummaryTask.status));
+  const summaryProfileId = (summaryModelLocked && taskModel ? taskModel : '')
+    || [savedModel, taskModel, activeProfile, profiles.find(profile => profile.is_default)?.id, profiles[0]?.id]
+      .find(id => profiles.some(profile => profile.id === id)) || '';
+  const setSummaryProfileId = (id: string) => {
+    if (!activeDocument || summaryModelLocked || !profiles.some(profile => profile.id === id)) return;
+    const next = {...summaryModelChoices, [activeDocument.id]: id};
+    setSummaryModelChoices(next);
+    try { window.localStorage.setItem('reader-next-summary-models', JSON.stringify(next)); } catch { /* Session selection still works. */ }
+  };
   const startSummaryTask = async (chapterIndex: number | null) => {
-    if (!activeDocument || !activeProfile || !chapters.length || chapterSummaryBusy || bookGenerationTask.current || importing.current) return;
+    if (!activeDocument || !summaryProfileId || !profiles.some(profile => profile.id === summaryProfileId) || !chapters.length || chapterSummaryBusy || bookGenerationTask.current || importing.current) return;
     const valid = capture();
     const task: BookGenerationTask = {mode: 'running', controller: new AbortController()};
     bookGenerationTask.current = task;
@@ -279,7 +298,7 @@ export function useOverview({activeDocument, activeProfile, currentPage, screen,
       ), task.controller.signal);
       if (!valid()) return;
       ensureBookGenerationActive(task);
-      let queued = await createSummaryTask(activeDocument.id, activeProfile, chapters.map(({title, page, depth}) => ({title, page, depth})), chapterIndex);
+      let queued = await createSummaryTask(activeDocument.id, summaryProfileId, chapters.map(({title, page, depth}) => ({title, page, depth})), chapterIndex);
       if (task.mode === 'cancelled') {
         await cancelTask(queued.id);
         if (valid()) {setChapterSummaryBusy(''); setBookGenerationState('cancelled'); setChapterSummaryProgress('已取消；已完成页面保留。');}
@@ -312,5 +331,5 @@ export function useOverview({activeDocument, activeProfile, currentPage, screen,
     if (bookGenerationTask.current) {bookGenerationTask.current.mode = 'cancelled'; bookGenerationTask.current.controller.abort(); return;}
     if (currentSummaryTask) await cancelTask(currentSummaryTask.id);
   };
-  return {importGapSummary, importLearningStructureFile, chapters, setChapters, chaptersLoading, setChaptersLoading, selectedChapterIndex, setSelectedChapterIndex, chapterSummaries, setChapterSummaries, summaryGaps, setSummaryGaps, chapterSummaryBusy, setChapterSummaryBusy, chapterSummaryProgress, setChapterSummaryProgress, chapterSummaryDraft, setChapterSummaryDraft, chapterSummaryError, setChapterSummaryError, structureImportStatus, setStructureImportStatus, bookGenerationState, setBookGenerationState, generationScope, setGenerationScope, generationTargetKey, setGenerationTargetKey, summarySelection, setSummarySelection, traceLocations, setTraceLocations, traceLoading, setTraceLoading, traceError, setTraceError, sourceTrace, setSourceTrace, returnedSummarySelection, setReturnedSummarySelection, structureFileInput, gapFileInput, gapImportTarget, bookGenerationTask, captureSummarySelection, findSummarySources, openTraceLocation, returnToSelectedSummary, renderSummaryText, chapterPlan, selectedChapter, selectedChapterKey, selectedPlan, requestedChapterEndPage, chapterChildren, chapterKind, selectedChapterSummary, selectedChapterGenerated, selectedChapterTask, selectedChapterTaskStopped, bookSummaryKey, bookSummary, nextChapterPage, chapterNotes, chapterFlashcards, currentSummaryTask, startSummaryTask, generateChapterStructure, generateBookStructure, pauseBookStructure, cancelBookStructure};
+  return {summaryProfiles: profiles, summaryProfileId, setSummaryProfileId, summaryModelLocked, importGapSummary, importLearningStructureFile, chapters, setChapters, chaptersLoading, setChaptersLoading, selectedChapterIndex, setSelectedChapterIndex, chapterSummaries, setChapterSummaries, summaryGaps, setSummaryGaps, chapterSummaryBusy, setChapterSummaryBusy, chapterSummaryProgress, setChapterSummaryProgress, chapterSummaryDraft, setChapterSummaryDraft, chapterSummaryError, setChapterSummaryError, structureImportStatus, setStructureImportStatus, bookGenerationState, setBookGenerationState, generationScope, setGenerationScope, generationTargetKey, setGenerationTargetKey, summarySelection, setSummarySelection, traceLocations, setTraceLocations, traceLoading, setTraceLoading, traceError, setTraceError, sourceTrace, setSourceTrace, returnedSummarySelection, setReturnedSummarySelection, structureFileInput, gapFileInput, gapImportTarget, bookGenerationTask, captureSummarySelection, findSummarySources, openTraceLocation, returnToSelectedSummary, renderSummaryText, chapterPlan, selectedChapter, selectedChapterKey, selectedPlan, requestedChapterEndPage, chapterChildren, chapterKind, selectedChapterSummary, selectedChapterGenerated, selectedChapterTask, selectedChapterTaskStopped, bookSummaryKey, bookSummary, nextChapterPage, chapterNotes, chapterFlashcards, currentSummaryTask, startSummaryTask, generateChapterStructure, generateBookStructure, pauseBookStructure, cancelBookStructure};
 }

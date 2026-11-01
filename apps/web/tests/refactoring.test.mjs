@@ -10,14 +10,14 @@ const {usePdfSearch} = await import('../.tmp/tests/features/reader/usePdfSearch.
 const {useAnnotations} = await import('../.tmp/tests/features/reader/useAnnotations.js');
 const {useWorkspaceNavigation} = await import('../.tmp/tests/features/workspace/useWorkspaceNavigation.js');
 const {usePanelLayout} = await import('../.tmp/tests/features/assistant/usePanelLayout.js');
-afterEach(cleanup);
+afterEach(() => {cleanup(); window.localStorage.clear();});
 const A={id:'A',title:'A'}, B={id:'B',title:'B'};
 const deferred=()=>{let resolve,reject; const promise=new Promise((a,b)=>{resolve=a;reject=b;}); return {promise,resolve,reject};};
 const response=body=>new Response(JSON.stringify(body),{headers:{'content-type':'application/json'}});
 const empty=()=>response({gaps:[],summaries:[],outline:[],pages:[]});
 const imported={outline:[{title:'new chapter',page:1,depth:0}],summaries:[{content:'new'}]};
 const file={text:async()=>JSON.stringify({chapters:[{title:'第一章',page:1,summary:'summary'}]})};
-const options=doc=>({activeDocument:doc,activeProfile:'model',currentPage:1,screen:'home',backgroundTasks:[],notes:[],flashcards:[],setBackgroundTasks(){},setTaskCenterOpen(){},setError(){},enterReader(){},goBack(){},refreshTasksNow:async()=>{},cancelTask:async()=>{}});
+const options=doc=>({activeDocument:doc,activeProfile:'model',profiles:[{id:'model',name:'模型一',model:'one'},{id:'other',name:'模型二',model:'two'}],currentPage:1,screen:'home',backgroundTasks:[],notes:[],flashcards:[],setBackgroundTasks(){},setTaskCenterOpen(){},setError(){},enterReader(){},goBack(){},refreshTasksNow:async()=>{},cancelTask:async()=>{}});
 const dependencies={loadOutline:async()=>[],collectSource:async()=>{}};
 
 test('structure file read from an earlier A visit never sends an import for the later A visit',async()=>{
@@ -159,4 +159,50 @@ test('cancel clicked while task submission is in flight also cancels the server 
  await act(async()=>{queued.resolve(response({task:{id:'just-submitted'}}));await request;});
  assert.deepEqual(cancelled,['just-submitted']);
  assert.equal(hook.result.current.chapterSummaryBusy,'');
+});
+
+test('summary model choices are isolated per book, survive remount, and recover from deletion', async()=>{
+ globalThis.fetch=async()=>empty();
+ const hook=renderHook(({doc,profiles})=>useOverview({...options(doc),profiles},dependencies),{initialProps:{doc:A,profiles:options(A).profiles}});
+ assert.equal(hook.result.current.summaryProfileId,'model');
+ act(()=>hook.result.current.setSummaryProfileId('other'));
+ hook.rerender({doc:B,profiles:options(A).profiles});
+ assert.equal(hook.result.current.summaryProfileId,'model');
+ hook.rerender({doc:A,profiles:options(A).profiles});
+ assert.equal(hook.result.current.summaryProfileId,'other');
+ hook.unmount();
+ const restored=renderHook(({profiles})=>useOverview({...options(A),profiles},dependencies),{initialProps:{profiles:options(A).profiles}});
+ assert.equal(restored.result.current.summaryProfileId,'other');
+ restored.rerender({profiles:[options(A).profiles[0]]});
+ assert.equal(restored.result.current.summaryProfileId,'model');
+ restored.rerender({profiles:[]});
+ assert.equal(restored.result.current.summaryProfileId,'');
+});
+
+test('summary submits the chosen book model and locks it during source preparation',async()=>{
+ const source=deferred();const requests=[];
+ globalThis.fetch=async(url,init)=>{
+  if(String(url)==='/api/tasks/summary'){requests.push(JSON.parse(init.body));return response({task:{id:'chosen-model-task'}});}
+  return empty();
+ };
+ const hook=renderHook(()=>useOverview(options(A),{...dependencies,collectSource:()=>source.promise}));
+ act(()=>{hook.result.current.setChapters([{title:'first',page:1,depth:0}]);hook.result.current.setSummaryProfileId('other');});
+ let pending;
+ act(()=>{pending=hook.result.current.startSummaryTask(null);});
+ assert.equal(hook.result.current.summaryModelLocked,true);
+ act(()=>hook.result.current.setSummaryProfileId('model'));
+ assert.equal(hook.result.current.summaryProfileId,'other');
+ await act(async()=>{source.resolve();await pending;});
+ assert.equal(requests.length,1);
+ assert.equal(requests[0].profile_id,'other');
+ assert.equal(requests[0].document_id,'A');
+});
+
+test('running book shows its submitted model rather than another books default',()=>{
+ globalThis.fetch=async()=>empty();
+ const task={id:'running',document_id:'A',task_type:'structure-summary',status:'running',message:'working',result:{summary_request:{profile_id:'other',chapter_index:null}}};
+ const hook=renderHook(()=>useOverview({...options(A),backgroundTasks:[task]},dependencies));
+ assert.equal(hook.result.current.summaryProfileId,'other');
+ act(()=>hook.result.current.setSummaryProfileId('model'));
+ assert.equal(hook.result.current.summaryProfileId,'other');
 });
