@@ -8,6 +8,7 @@ from dataclasses import replace
 from .citation_verification import verify_citations, local_verification
 from .rag import format_rag_context
 from .web_search import format_web_context
+from .visual_context import image_search_query, image_verification_notice
 
 MAX_ROUNDS = 2
 MAX_SOURCES = 24
@@ -72,18 +73,26 @@ async def research_answer(payload, repository, provider, profile, api_key, web_s
                for item in payload.history[-6:] if item.get('role') in {'user', 'assistant'}]
 
     async with asyncio.timeout(TOTAL_TIMEOUT):
-        yield progress('search', '正在检索所选教材的相关原文')
-        collect(await asyncio.to_thread(repository.search_rag_many, ids, payload.question, max(12, len(ids))))
-        yield {'type': 'sources', 'sources': list(sources), 'status': status}
-        for round_number in range(1, MAX_ROUNDS + 1):
+        search_query = payload.question
+        if payload.images:
             calls += 1
-            yield progress('plan', f'第 {round_number}/{MAX_ROUNDS} 轮：检查证据并规划补充检索')
+            yield progress('vision', '正在读取附图，提取题干与教材检索关键词')
+            search_query = await image_search_query(provider, profile, api_key, payload.question, payload.images)
+            queries.add(search_query)
+        planning_rounds = MAX_ROUNDS - int(bool(payload.images))
+        yield progress('search', '正在检索所选教材的相关原文')
+        collect(await asyncio.to_thread(repository.search_rag_many, ids, search_query, max(12, len(ids))))
+        yield {'type': 'sources', 'sources': list(sources), 'status': status}
+        for round_number in range(1, planning_rounds + 1):
+            calls += 1
+            yield progress('plan', f'第 {round_number}/{planning_rounds} 轮：检查证据并规划补充检索')
             try:
                 raw = await asyncio.wait_for(provider.complete(
                     replace(profile, max_tokens=min(profile.max_tokens, 1024)), api_key,
                     system=PLANNER,
+                    **({'images': payload.images} if payload.images else {}),
                     prompt=json.dumps({'question': payload.question, 'books': books,
-                        'history': history, 'searched_queries': sorted(queries),
+                        'image_search_context': search_query if payload.images else '', 'history': history, 'searched_queries': sorted(queries),
                         'evidence': sources}, ensure_ascii=False),
                 ), STEP_TIMEOUT)
                 plan = parse_plan(raw)
@@ -129,7 +138,7 @@ async def research_answer(payload, repository, provider, profile, api_key, web_s
         if payload.use_web:
             yield progress('web', '正在查询网络补充资料，网络来源将单独列出')
             try:
-                web_sources = await asyncio.wait_for(web_search(payload.question), 20)
+                web_sources = await asyncio.wait_for(web_search(search_query), 20)
             except Exception:
                 yield progress('fallback', '联网查询暂不可用，继续依据教材回答')
             yield {'type': 'web_sources', 'sources': web_sources}
@@ -143,6 +152,7 @@ async def research_answer(payload, repository, provider, profile, api_key, web_s
             max_tokens=min(payload.max_tokens or profile.max_tokens, 4096),
             use_web=payload.use_web, web_context=format_web_context(web_sources),
             rag_context=format_rag_context(sources),
+            **({'images': payload.images} if payload.images else {}),
         ):
             answer += delta
             yield {'type': 'delta', 'text': delta}
@@ -158,6 +168,8 @@ async def research_answer(payload, repository, provider, profile, api_key, web_s
         except TimeoutError:
             verification = local_verification(answer, sources)
             verification['warning'] = 'AI 核验超时，当前结果仅为本地文字匹配，请结合原文确认。'
+        if payload.images:
+            verification = image_verification_notice(verification)
         yield {'type': 'citation_verification', 'verification': verification}
         if payload.document_id and payload.persist_history:
             repository.add_chat_message(payload.document_id, 'assistant', answer)

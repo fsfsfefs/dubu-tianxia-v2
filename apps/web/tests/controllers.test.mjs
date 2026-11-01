@@ -218,7 +218,7 @@ test('image upload validates count, type and size before reading',async()=>{
  assert.equal(hook.result.current.images.length,0);
 });
 
-test('pasted images attach only in current excerpt mode and are cleared when changing books',async()=>{
+test('pasted images attach to questions and are cleared when changing books',async()=>{
  const hook=renderHook(({doc})=>useChat(doc,{ensureIndex(){},async stream(){}}),{initialProps:{doc:book}});
  let prevented=false;
  await act(async()=>{hook.result.current.pasteImages({clipboardData:{files:[new window.File(['image'],'paste.png',{type:'image/png'})]},preventDefault(){prevented=true;}});
@@ -227,4 +227,21 @@ test('pasted images attach only in current excerpt mode and are cleared when cha
  assert.equal(hook.result.current.images.length,1);
  hook.rerender({doc:other});
  assert.equal(hook.result.current.images.length,0);
+});
+
+test('full-book and multi-book deep questions send images alongside retrieval flags', async()=>{
+ for(const multiBookMode of [false,true]){
+  let sent;const indexed=[];
+  const dependencies={async ensureIndex(id){indexed.push(id);},async stream(payload,delta){sent=payload;delta('图文教材回答');}};
+  const hook=renderHook(()=>useChat(book,dependencies,{includeCurrentExcerpt:false,multiBookMode,selectedBookIds:[book.id,other.id],deepAnswer:true,excerpt:''}));
+  await act(async()=>{await hook.result.current.addImages([new window.File(['image'],'题目.png',{type:'image/png'})]);});
+  assert.equal(hook.result.current.images.length,1);
+  await act(async()=>{await hook.result.current.runAsk('');});
+  assert.equal(sent.images.length,1);
+  assert.equal(sent.use_rag,true);
+  assert.equal(sent.use_agent,true);
+  assert.deepEqual(sent.document_ids,multiBookMode?[book.id,other.id]:[book.id]);
+  assert.deepEqual(indexed,sent.document_ids);
+  hook.unmount();
+ }
 });

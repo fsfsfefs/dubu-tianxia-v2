@@ -61,7 +61,7 @@ def test_provider_sends_protocol_specific_image_parts(responses):
     assert parts[1] == ({"type": "input_image", "image_url": image_url()} if responses else {"type": "image_url", "image_url": {"url": image_url()}})
 
 
-def test_chat_forwards_images_and_rejects_modes_that_would_drop_them():
+def test_chat_forwards_images_in_current_source_mode():
     captured = []
     async def stream(*args, **kwargs):
         captured.append(kwargs)
@@ -74,6 +74,54 @@ def test_chat_forwards_images_and_rejects_modes_that_would_drop_them():
         response = client.post("/api/chat/stream", json=body)
         assert response.status_code == 200 and "图中结论" in response.text
         assert captured[0]["images"] == [image_url()]
-        for flag in ["use_rag", "use_agent", "use_web"]:
-            assert client.post("/api/chat/stream", json={**body, flag: True}).status_code == 422
         assert len(captured) == 1
+
+@pytest.mark.parametrize("responses", [False, True])
+def test_complete_passes_image_content_for_search_planning(responses):
+    captured = []
+    def handler(request):
+        captured.append(json.loads(request.content))
+        payload = {"output": [{"type": "message", "content": [{"type": "output_text", "text": "虚拟内存 缺页中断"}]}]} if responses else {"choices": [{"message": {"content": "虚拟内存 缺页中断"}}]}
+        return httpx.Response(200, json=payload)
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            profile = ModelProfile("model", "Vision", "https://example.com/" + ("responses" if responses else "chat/completions"), "vision")
+            return await OpenAICompatibleProvider(client).complete(profile, "key", system="提取关键词", prompt="解答这道题", images=[image_url()])
+    assert asyncio.run(run()) == "虚拟内存 缺页中断"
+    parts = captured[0]["input" if responses else "messages"][-1]["content"]
+    assert parts[1] == ({"type": "input_image", "image_url": image_url()} if responses else {"type": "image_url", "image_url": {"url": image_url()}})
+
+
+@pytest.mark.parametrize("deep", [False, True])
+def test_image_question_drives_rag_and_reaches_answer_and_deep_planner(deep):
+    from reader_next_api.visual_context import VISUAL_QUERY
+    from reader_next_api.reading_agent import PLANNER
+    profile = ModelProfile("model", "Vision", "https://example.com/chat/completions", "vision")
+    searches, answers, calls = [], [], []
+    async def complete(*args, system, prompt, **kwargs):
+        calls.append((system, kwargs))
+        if system == VISUAL_QUERY:
+            assert kwargs["images"] == [image_url()]
+            return "虚拟内存 缺页中断"
+        if system == PLANNER:
+            assert kwargs["images"] == [image_url()]
+            return '{"done":true}'
+        return '{"checks":[]}'
+    async def stream(*args, **kwargs):
+        answers.append(kwargs)
+        yield "虚拟内存使用磁盘辅助内存管理。[教材甲｜PDF第10页]"
+    def search(ids, query, limit):
+        searches.append(query)
+        return [{"document_id":"a","document_title":"教材甲","page_number":10,"content":"虚拟内存使用磁盘辅助内存管理。","score":1}]
+    repo = SimpleNamespace(profile=lambda _:profile, search_rag_many=search, rag_status_many=lambda _:{"indexed_pages":10,"chunk_count":1}, list_documents=lambda:[{"id":"a","title":"教材甲"}])
+    runtime = SimpleNamespace(repository=repo, credential_store=SimpleNamespace(get=lambda _:"key"), provider=SimpleNamespace(stream=stream,complete=complete))
+    app=FastAPI();app.include_router(create_router(runtime))
+    with TestClient(app) as client:
+        result=client.post("/api/chat/stream",json={"profile_id":"model","document_ids":["a"],"question":"解答这道题","images":[image_url()],"use_rag":True,"use_agent":deep,"persist_history":False})
+    assert result.status_code == 200
+    assert '"type": "error"' not in result.text
+    assert "虚拟内存 缺页中断" in searches[0]
+    assert answers[0]["images"] == [image_url()]
+    assert "教材甲" in answers[0]["rag_context"]
+    assert "不核验附图本身" in result.text
+    assert len(calls) + len(answers) <= (4 if deep else 3)

@@ -266,7 +266,7 @@ class OpenAICompatibleProvider:
         )
         responses_api = uses_responses_api(profile)
         if images:
-            text = messages[-1]["content"] + "\n\n附图为用户提供的当前材料或问题。依据图片可见内容回答；看不清时明确说明，不编造文字、页码或引用。"
+            text = messages[-1]["content"] + "\n\n附图为用户提供的材料或问题。结合图片与提供的教材证据回答，区分图片观察、教材原文和推断；附图本身不等于教材检索出处，不据此虚构书名或页码。看不清时明确说明。"
             messages[-1]["content"] = (
                 [{"type": "input_text", "text": text}] + [{"type": "input_image", "image_url": url} for url in images]
                 if responses_api else
@@ -325,10 +325,17 @@ class OpenAICompatibleProvider:
                 await client.aclose()
 
     async def complete(
-        self, profile: ModelProfile, api_key: str, *, system: str, prompt: str
+        self, profile: ModelProfile, api_key: str, *, system: str, prompt: str, images: list[str] | None = None
     ) -> str:
         responses_api = uses_responses_api(profile)
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+        content = prompt
+        if images:
+            content = (
+                [{"type": "input_text", "text": prompt}] + [{"type": "input_image", "image_url": url} for url in images]
+                if responses_api else
+                [{"type": "text", "text": prompt}] + [{"type": "image_url", "image_url": {"url": url}} for url in images]
+            )
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
         body = build_request_body(
             profile,
             messages,

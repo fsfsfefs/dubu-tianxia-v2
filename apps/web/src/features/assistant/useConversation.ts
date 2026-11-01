@@ -31,7 +31,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
   const [imageBusy, setImageBusy] = useState(false);
   const imageRead = useRef<object | null>(null);
   const addImages = async (files: File[]) => {
-    if (!includeCurrentExcerpt || busy || imageRead.current) return;
+    if (busy || imageRead.current) return;
     if (files.length + images.length > 4) {setError('最多附加4张图片。'); return;}
     if (files.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || !file.size || file.size > 3 * 1024 * 1024)) {
       setError('请选择PNG、JPEG或WebP图片，每张不超过3MB。'); return;
@@ -53,7 +53,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
   const removeImage = (index: number) => {if (!busy && !imageBusy) setImages(items => items.filter((_, i) => i !== index));};
   const pasteImages = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'));
-    if (files.length && includeCurrentExcerpt) {event.preventDefault(); void addImages(files);}
+    if (files.length) {event.preventDefault(); void addImages(files);}
   };
   const [messages, setMessages] = useState<Message[]>([]);
   const [assistantMessages, setAssistantMessages] = useState<Message[]>([]);
@@ -79,7 +79,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
   }, [activeDocument?.id]);
 
   const runAsk = async (prompt: string) => {
-    if ((!prompt.trim() && !(includeCurrentExcerpt && images.length)) || !activeProfile || busy || imageBusy || imageRead.current || request.current || !activeDocument) return;
+    if ((!prompt.trim() && !images.length) || !activeProfile || busy || imageBusy || imageRead.current || request.current || !activeDocument) return;
     if (includeCurrentExcerpt && !excerpt.trim() && !images.length) {setError('请选择或粘贴当前页原文，或者切换到单书全文模式。'); return;}
     const current = {controller: new AbortController(), valid: capture()};
     request.current = current;
@@ -107,7 +107,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
       const context = includeCurrentExcerpt ? excerpt.trim() : book?.content.trim() ? `【全书知识结构】\n${book.content}`.slice(0, 12000) : '';
       await dependencies.stream({
         document_id: activeDocument.id, document_ids: !includeCurrentExcerpt ? ids : undefined,
-        profile_id: activeProfile, excerpt: context, images: includeCurrentExcerpt && images.length ? images.map(image => image.url) : undefined, question: user.content, history: conversation.slice(-12).map(({role, content}) => ({role, content})),
+        profile_id: activeProfile, excerpt: context, images: images.length ? images.map(image => image.url) : undefined, question: user.content, history: conversation.slice(-12).map(({role, content}) => ({role, content})),
         page_number: includeCurrentExcerpt ? currentPage : undefined,
         use_web: !includeCurrentExcerpt && useWebVerification, use_rag: !includeCurrentExcerpt,
         use_agent: !includeCurrentExcerpt && deepAnswer, verify_citations: !includeCurrentExcerpt, persist_history: master,
@@ -131,7 +131,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
         setAgentEvents(items => [...items, {stage: 'cancelled', message: '已取消本次问答，已停止后续调用；已显示的文字尚未完成核验。', model_calls: items.at(-1)?.model_calls || 0, max_model_calls: 4}]);
       } else {
         setError(error instanceof Error ? error.message : '模型请求失败');
-        setAgentEvents(items => items.length ? [...items, {...items[items.length - 1], stage: 'error', message: '本次深度问答未完成，可重新发送问题重试。'}] : items);
+        setAgentEvents(items => items.length ? [...items, {...items[items.length - 1], stage: 'error', message: '本次问答未完成，可重新发送问题重试。'}] : items);
       }
     } finally {
       if (owns()) {request.current = null; setVerificationRunning(false); setIndexingBookTitle(''); setBusy(false);}
