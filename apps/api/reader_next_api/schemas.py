@@ -1,5 +1,8 @@
 """Validated HTTP request contracts, independent of application startup."""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+import base64
+from io import BytesIO
+from PIL import Image
 
 class ProfileInput(BaseModel):
     id: str | None = None
@@ -37,6 +40,29 @@ class IndexTaskInput(BaseModel):
 
 
 class ChatInput(BaseModel):
+    images: list[str] = Field(default_factory=list, max_length=4)
+
+    @field_validator("images")
+    @classmethod
+    def validate_images(cls, values):
+        formats = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
+        for value in values:
+            header, separator, encoded = value.partition(",")
+            mime = header.removeprefix("data:").removesuffix(";base64")
+            if not separator or header != f"data:{mime};base64" or mime not in formats or len(encoded) > 4 * 1024 * 1024:
+                raise ValueError("图片仅支持PNG/JPEG/WebP，每张不超过3MB。")
+            try:
+                data = base64.b64decode(encoded, validate=True)
+                if not data or len(data) > 3 * 1024 * 1024:
+                    raise ValueError("image too large")
+                with Image.open(BytesIO(data)) as image:
+                    if image.format != formats[mime] or image.width * image.height > 20_000_000:
+                        raise ValueError("invalid image format or dimensions")
+                    image.verify()
+            except Exception as error:
+                raise ValueError("图片无效、损坏或过大，请重新选择。") from error
+        return values
+
     document_id: str | None = None
     document_ids: list[str] = Field(default_factory=list, max_length=12)
     profile_id: str

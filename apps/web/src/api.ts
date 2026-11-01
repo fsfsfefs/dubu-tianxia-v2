@@ -342,7 +342,7 @@ export async function exportAllData(): Promise<unknown> {
 export type AgentProgress = {stage: string; message: string; model_calls: number; max_model_calls: number};
 
 export async function streamAnswer(
-  input: {document_id?: string; document_ids?: string[]; profile_id: string; excerpt: string; question: string; history?: {role: string; content: string}[]; page_number?: number; max_tokens?: number; use_web?: boolean; use_rag?: boolean; use_agent?: boolean; persist_history?: boolean; verify_citations?: boolean},
+  input: {document_id?: string; document_ids?: string[]; profile_id: string; excerpt: string; images?: string[]; question: string; history?: {role: string; content: string}[]; page_number?: number; max_tokens?: number; use_web?: boolean; use_rag?: boolean; use_agent?: boolean; persist_history?: boolean; verify_citations?: boolean},
   onDelta: (text: string) => void,
   signal?: AbortSignal,
   onSources?: (sources: RagSource[], status: RagStatus) => void,

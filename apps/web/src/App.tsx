@@ -1,3 +1,4 @@
+import './features/assistant/Images.css';
 import {GuideLauncher} from './features/guide/GuideLauncher';
 import {useWorkspaceNavigation} from './features/workspace/useWorkspaceNavigation';
 import {AssistantDock} from './features/assistant/AssistantDock';

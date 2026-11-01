@@ -21,6 +21,8 @@ def create_router(runtime: Runtime) -> APIRouter:
 
     @router.post('/api/chat/stream')
     async def chat_stream(payload: ChatInput) -> StreamingResponse:
+        if payload.images and (payload.use_agent or payload.use_rag or payload.use_web):
+            raise HTTPException(422, '图片提问请使用当前原文模式。')
         if payload.use_agent and (not payload.use_rag or not (payload.document_ids or payload.document_id)):
             raise HTTPException(422, '深度问答需要选择单书全文或多书联系。')
         try:
@@ -54,7 +56,7 @@ def create_router(runtime: Runtime) -> APIRouter:
                 web_context = format_web_context(web_sources)
                 if payload.use_web:
                     yield f'data: {json.dumps({'type': 'web_sources', 'sources': web_sources}, ensure_ascii=False)}\n\n'
-                async for delta in runtime.provider.stream(profile, api_key, excerpt=payload.excerpt, question=payload.question, history=payload.history, page_number=payload.page_number, max_tokens=payload.max_tokens, use_web=payload.use_web, web_context=web_context, rag_context=format_rag_context(rag_sources) if payload.use_rag else ''):
+                async for delta in runtime.provider.stream(profile, api_key, excerpt=payload.excerpt, question=payload.question, history=payload.history, page_number=payload.page_number, max_tokens=payload.max_tokens, use_web=payload.use_web, web_context=web_context, rag_context=format_rag_context(rag_sources) if payload.use_rag else '', **({'images': payload.images} if payload.images else {})):
                     answer += delta
                     yield f'data: {json.dumps({'type': 'delta', 'text': delta}, ensure_ascii=False)}\n\n'
                 if payload.document_id and payload.persist_history and answer.strip():

@@ -27,6 +27,34 @@ export function useConversation(options: Options, dependencies: Dependencies = d
   const {activeDocument, documents, activeProfile, profiles, excerpt, currentPage, chapterSummaries, master,
     includeCurrentExcerpt, multiBookMode, selectedBookIds, useWebVerification, deepAnswer, busy, setBusy, setError, onNoteSaved} = options;
   const [question, setQuestion] = useState('');
+  const [images, setImages] = useState<{name: string; url: string}[]>([]);
+  const [imageBusy, setImageBusy] = useState(false);
+  const imageRead = useRef<object | null>(null);
+  const addImages = async (files: File[]) => {
+    if (!includeCurrentExcerpt || busy || imageRead.current) return;
+    if (files.length + images.length > 4) {setError('最多附加4张图片。'); return;}
+    if (files.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || !file.size || file.size > 3 * 1024 * 1024)) {
+      setError('请选择PNG、JPEG或WebP图片，每张不超过3MB。'); return;
+    }
+    const valid = capture();
+    const token = {};
+    imageRead.current = token; setImageBusy(true);
+    try {
+      const added = await Promise.all(files.map(file => new Promise<{name: string; url: string}>((resolve, reject) => {
+        const reader = new window.FileReader();
+        reader.onload = () => resolve({name: file.name || '粘贴图片', url: String(reader.result)});
+        reader.onerror = () => reject(new Error('图片读取失败，请重新选择。'));
+        reader.readAsDataURL(file);
+      })));
+      if (valid() && imageRead.current === token) {setImages(items => [...items, ...added]); setError('');}
+    } catch (error) {if (valid()) setError(error instanceof Error ? error.message : '图片读取失败');}
+    finally {if (valid() && imageRead.current === token) {imageRead.current = null; setImageBusy(false);}}
+  };
+  const removeImage = (index: number) => {if (!busy && !imageBusy) setImages(items => items.filter((_, i) => i !== index));};
+  const pasteImages = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'));
+    if (files.length && includeCurrentExcerpt) {event.preventDefault(); void addImages(files);}
+  };
   const [messages, setMessages] = useState<Message[]>([]);
   const [assistantMessages, setAssistantMessages] = useState<Message[]>([]);
   const [agentEvents, setAgentEvents] = useState<AgentProgress[]>([]);
@@ -46,20 +74,20 @@ export function useConversation(options: Options, dependencies: Dependencies = d
     setWebSources([]); setCitationVerification(null); setVerificationRunning(false); setIndexingBookTitle('');
   };
   useEffect(() => {
-    setMessages([]); setAssistantMessages([]); setQuestion(''); resetEvidence(); setBusy(false);
+    setMessages([]); setAssistantMessages([]); setQuestion(''); setImages([]); setImageBusy(false); imageRead.current = null; resetEvidence(); setBusy(false);
     return () => {request.current?.controller.abort(); request.current = null;};
   }, [activeDocument?.id]);
 
   const runAsk = async (prompt: string) => {
-    if (!prompt.trim() || !activeProfile || busy || request.current || !activeDocument) return;
-    if (includeCurrentExcerpt && !excerpt.trim()) {setError('请选择或粘贴当前页原文，或者切换到单书全文模式。'); return;}
+    if ((!prompt.trim() && !(includeCurrentExcerpt && images.length)) || !activeProfile || busy || imageBusy || imageRead.current || request.current || !activeDocument) return;
+    if (includeCurrentExcerpt && !excerpt.trim() && !images.length) {setError('请选择或粘贴当前页原文，或者切换到单书全文模式。'); return;}
     const current = {controller: new AbortController(), valid: capture()};
     request.current = current;
     const owns = () => current.valid() && request.current === current;
     const accepting = () => owns() && !current.controller.signal.aborted;
     const conversation = master ? messages : assistantMessages;
     const update = master ? setMessages : setAssistantMessages;
-    const user = {role: 'user' as const, content: prompt.trim()};
+    const user = {role: 'user' as const, content: prompt.trim() || '请解读附图中的教材内容或问题。'};
     const answerId = Symbol('answer');
     update(items => [...items, user, {role: 'assistant', content: '', requestId: answerId}]);
     setQuestion(''); setBusy(true); setError(''); resetEvidence();
@@ -79,7 +107,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
       const context = includeCurrentExcerpt ? excerpt.trim() : book?.content.trim() ? `【全书知识结构】\n${book.content}`.slice(0, 12000) : '';
       await dependencies.stream({
         document_id: activeDocument.id, document_ids: !includeCurrentExcerpt ? ids : undefined,
-        profile_id: activeProfile, excerpt: context, question: user.content, history: conversation.slice(-12).map(({role, content}) => ({role, content})),
+        profile_id: activeProfile, excerpt: context, images: includeCurrentExcerpt && images.length ? images.map(image => image.url) : undefined, question: user.content, history: conversation.slice(-12).map(({role, content}) => ({role, content})),
         page_number: includeCurrentExcerpt ? currentPage : undefined,
         use_web: !includeCurrentExcerpt && useWebVerification, use_rag: !includeCurrentExcerpt,
         use_agent: !includeCurrentExcerpt && deepAnswer, verify_citations: !includeCurrentExcerpt, persist_history: master,
@@ -137,7 +165,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
       if (valid()) onNoteSaved(note);
     } catch (error) {if (valid()) setError(error instanceof Error ? error.message : '解释保存失败');}
   };
-  return {question, setQuestion, messages, setMessages, assistantMessages, agentEvents, ragProgress, indexingBookTitle,
+  return {images, imageBusy, addImages, removeImage, pasteImages, question, setQuestion, messages, setMessages, assistantMessages, agentEvents, ragProgress, indexingBookTitle,
     ragSources, ragStatus, webSources, citationVerification, verificationRunning, runAsk,
     ask: () => runAsk(question), cancelAsk, clearConversation, saveLastExplanation};
 }

@@ -187,3 +187,44 @@ test('summary source matching respects the chapter page range', async () => {
   const results = locateSummarySources('虚拟内存', [{page_number: 1, text: '虚拟内存'}, {page_number: 5, text: '虚拟内存依靠页面置换。'}], 5, 8);
   assert.deepEqual(results.map(item => item.page), [5]); assert.match(results[0].snippet, /页面置换/);
 });
+
+test('image-only excerpt questions send attachments and preserve page context', async()=>{
+ let sent;
+ const dependencies={ensureIndex(){throw Error('must not index');}, async stream(payload,delta){sent=payload;delta('图片回答');}};
+ const hook=renderHook(()=>useChat(book,dependencies,{excerpt:''}));
+ const file=new window.File(['image-data'],'截图.png',{type:'image/png'});
+ await act(async()=>{await hook.result.current.addImages([file]);});
+ assert.equal(hook.result.current.images.length,1);
+ await act(async()=>{await hook.result.current.runAsk('');});
+ assert.equal(sent.images.length,1);
+ assert.match(sent.images[0],/^data:image\/png;base64,/);
+ assert.equal(sent.page_number,3);
+ assert.equal(sent.use_rag,false);
+ assert.match(sent.question,/附图/);
+ assert.equal(hook.result.current.assistantMessages.at(-1).content,'图片回答');
+ act(()=>hook.result.current.removeImage(0));
+ assert.equal(hook.result.current.images.length,0);
+});
+
+test('image upload validates count, type and size before reading',async()=>{
+ const errors=[];
+ const hook=renderHook(()=>useChat(book,{ensureIndex(){},async stream(){}},{setError:message=>errors.push(message)}));
+ for(const files of [
+  [new window.File(['svg'],'test.svg',{type:'image/svg+xml'})],
+  [new window.File([new Uint8Array(3*1024*1024+1)],'big.png',{type:'image/png'})],
+  Array.from({length:5},()=>new window.File(['a'],'test.png',{type:'image/png'}))
+ ]) await act(async()=>{await hook.result.current.addImages(files);});
+ assert.equal(errors.length,3);
+ assert.equal(hook.result.current.images.length,0);
+});
+
+test('pasted images attach only in current excerpt mode and are cleared when changing books',async()=>{
+ const hook=renderHook(({doc})=>useChat(doc,{ensureIndex(){},async stream(){}}),{initialProps:{doc:book}});
+ let prevented=false;
+ await act(async()=>{hook.result.current.pasteImages({clipboardData:{files:[new window.File(['image'],'paste.png',{type:'image/png'})]},preventDefault(){prevented=true;}});
+  await new Promise(resolve=>setTimeout(resolve,30));});
+ assert.equal(prevented,true);
+ assert.equal(hook.result.current.images.length,1);
+ hook.rerender({doc:other});
+ assert.equal(hook.result.current.images.length,0);
+});

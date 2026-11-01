@@ -251,6 +251,7 @@ class OpenAICompatibleProvider:
         use_web: bool = False,
         web_context: str = "",
         rag_context: str = "",
+        images: list[str] | None = None,
     ) -> AsyncIterator[str]:
         system_prompt = RAG_SYSTEM_PROMPT if rag_context else WEB_SYSTEM_PROMPT if use_web else SYSTEM_PROMPT
         messages = [{"role": "system", "content": system_prompt}]
@@ -264,6 +265,13 @@ class OpenAICompatibleProvider:
             }
         )
         responses_api = uses_responses_api(profile)
+        if images:
+            text = messages[-1]["content"] + "\n\n附图为用户提供的当前材料或问题。依据图片可见内容回答；看不清时明确说明，不编造文字、页码或引用。"
+            messages[-1]["content"] = (
+                [{"type": "input_text", "text": text}] + [{"type": "input_image", "image_url": url} for url in images]
+                if responses_api else
+                [{"type": "text", "text": text}] + [{"type": "image_url", "image_url": {"url": url}} for url in images]
+            )
         body = build_request_body(profile, messages, stream=True, max_tokens=max_tokens)
         owned = self.client is None
         client = self.client or httpx.AsyncClient(timeout=120)
