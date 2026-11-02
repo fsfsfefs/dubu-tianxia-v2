@@ -17,11 +17,12 @@ def change_ink_mark(repo,document_id,member_ids,region_id,name=None):
         if not selected or {row['id'] for row in selected}!=ids:raise LookupError("标记已变化或不属于当前教材，请重新打开列表。")
         for row in rows:row['tags']=json.loads(row['tags_json'])
         if any('__ink__' not in row['tags'] for row in selected):raise ValueError("只能编辑手写标记，不能混入文字高亮或星标。")
-        planes={(row['page_number'],surface(row['tags'])) for row in selected}
-        if len(planes)!=1:raise ValueError("一个标记必须位于同一PDF页的同一书写区域。")
+        pages={row['page_number'] for row in selected}
+        if len(pages)!=1:raise ValueError("一个标记必须位于同一PDF页。")
+        page=next(iter(pages))
+        # Include all current strokes, including those saved after the list was opened.
+        selected=[row for row in rows if row['page_number']==page and '__ink__' in row['tags'] and json.loads(row['rects_json'])]
         tag=PREFIX+region_id
-        selected += [row for row in rows if row['id'] not in ids and tag in row['tags']]
-        if any('__ink__' not in row['tags'] or (row['page_number'],surface(row['tags'])) not in planes for row in selected):raise ValueError("标记归属不一致，未修改任何笔迹。")
         if name is not None:
             name=name.strip()
             if not name:raise ValueError("标记名称不能为空。")

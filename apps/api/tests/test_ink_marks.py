@@ -36,7 +36,7 @@ def test_region_naming_is_atomic_preserves_geometry_and_deletes_as_one(context,t
     assert len(deleted.json()['removed'])==3 and repo.list_highlights(doc)==[]
 
 
-@pytest.mark.parametrize('kind',['cross-book','cross-page','cross-surface','text-highlight','missing','blank-name'])
+@pytest.mark.parametrize('kind',['cross-book','cross-page','text-highlight','missing','blank-name'])
 def test_invalid_region_edits_leave_all_ink_unchanged(context,kind):
     client,repo,doc,other,ink=context
     a=ink()
@@ -49,3 +49,18 @@ def test_invalid_region_edits_leave_all_ink_unchanged(context,kind):
     result=client.put(f'/api/documents/{doc}/ink-marks',json={'member_ids':[a['id'],b['id'] if kind!='missing' else 'missing'],'region_id':'x','name':' ' if kind=='blank-name' else '测试'})
     assert result.status_code in {404,422}
     assert repo.list_highlights(doc)==before
+
+
+def test_page_mark_includes_distant_regions_and_both_margins_only(context):
+    client,repo,doc,other,ink=context
+    a=ink(tags=['__ink__','pen','__ink_region:a'])
+    left=ink(tags=['__ink__','pen','__margin_left__','__ink_region:b'])
+    right=ink(tags=['__ink__','pen','__margin_right__'])
+    next_page=ink(page=2);foreign=ink(document=other);text=ink(tags=['复习'])
+    url=f'/api/documents/{doc}/ink-marks'
+    body={'member_ids':[a['id']],'region_id':'page_1','name':'整页推导'}
+    assert len(client.put(url,json=body).json()['highlights'])==3
+    result=client.request('DELETE',url,json=body)
+    assert set(result.json()['deleted_ids'])=={a['id'],left['id'],right['id']}
+    assert {item['id'] for item in repo.list_highlights(doc)}=={next_page['id'],text['id']}
+    assert len(repo.list_highlights(other))==1

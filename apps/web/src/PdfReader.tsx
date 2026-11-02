@@ -66,7 +66,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const pageSources = useRef(new Map<number, 'native' | 'ocr'>());
   const ocrCache = useRef(new Map<number, OcrWord[]>());
   const {query, setQuery, searching, searchedPages, setSearchedPages, lastSearchQuery, setLastSearchQuery, results, setResults, searchDocument, cancelSearch, pageTextCache} = usePdfSearch(document.id, pdf, setError);
-  const {startNewInkMark,newMarkPending,renameMark,removeMark,annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
+  const {renameMark,removeMark,annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
     saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark} = useAnnotations(document, highlights, setHighlights, setError);
   const url = `/api/documents/${document.id}/file`;
@@ -413,7 +413,6 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
       </div>
     </div>
     {annotationToolbarOpen && !toolbarCollapsed && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
-      <button onClick={startNewInkMark}>{newMarkPending?'下笔创建新标记':'新建标记'}</button>
       <button onClick={()=>setInkMarksOpen(value=>!value)}>标记列表</button>
       <button className={annotationTool === 'pen' ? 'active' : ''} onClick={() => setAnnotationTool('pen')}>画笔</button>
       <button className={annotationTool === 'marker' ? 'active' : ''} onClick={() => setAnnotationTool('marker')}>荧光笔</button>

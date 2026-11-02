@@ -228,14 +228,13 @@ test('margin ink persists its surface and erase/undo are isolated from PDF and o
 });
 
 
-test('nearby pen strokes share a region while New Mark deliberately starts a distinct region',async()=>{
+test('all strokes on the same PDF page share one mark',async()=>{
  const {hook,stored,errors}=inkHarness();
  await act(async()=>{await hook.result.current.saveInkAnnotation(1,[{x:.1,y:.1},{x:.2,y:.2}]);await hook.result.current.saveInkAnnotation(1,[{x:.15,y:.15},{x:.25,y:.25}]);});
  let rows=[...stored.values()];const region=rows[0].tags.find(tag=>tag.startsWith('__ink_region:'));
  assert.equal(rows[1].tags.includes(region),true);
- act(()=>hook.result.current.startNewInkMark());
  await act(async()=>{await hook.result.current.saveInkAnnotation(1,[{x:.15,y:.15},{x:.25,y:.25}]);});
- rows=[...stored.values()];assert.equal(rows[2].tags.includes(region),false);
+ rows=[...stored.values()];assert.equal(rows[2].tags.includes(region),true);
  assert.deepEqual(errors,[]);
 });
 

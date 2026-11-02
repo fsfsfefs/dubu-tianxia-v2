@@ -1,4 +1,4 @@
-import {buildInkMarks,inkBounds,nearby,closestMark,regionTags,type InkMark} from './inkMarks';
+import {buildInkMarks,regionTags,type InkMark} from './inkMarks';
 import {inkSurface,surfaceTags,type InkSurface} from './inkSurface';
 import {useEffect, useRef, useState} from 'react';
 import {createHighlight, deleteHighlight, updateHighlight, renameInkMark, deleteInkMark, type Highlight, type HighlightRect} from '../../api';
@@ -14,9 +14,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const capture = useDocumentScope(document.id);
   const annotationUndoStack = useRef<AnnotationUndoAction[]>([]);
   const inkQueue = useRef(Promise.resolve());
-  const activeMark = useRef<string|null>(null),forceNewMark=useRef(false);
-  const [newMarkPending,setNewMarkPending]=useState(false);
-  const startNewInkMark=()=>{activeMark.current=null;forceNewMark.current=true;setNewMarkPending(true);if(annotationTool!=='marker')setAnnotationTool('pen');};
+
   const currentHighlights = useRef(highlights);
   currentHighlights.current = highlights;
   const commitInk = (change: (items: Highlight[]) => Highlight[]) => {
@@ -42,7 +40,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const [editingHighlight, setEditingHighlight] = useState<string | null>(null);
   const [highlightComment, setHighlightComment] = useState('');
   const [highlightTags, setHighlightTags] = useState('');
-  useEffect(() => {activeMark.current=null;forceNewMark.current=false;setNewMarkPending(false);annotationUndoStack.current = []; setAnnotationUndoDepth(0); setAnnotationDraft(null); setEditingHighlight(null);}, [document.id]);
+  useEffect(() => {annotationUndoStack.current = []; setAnnotationUndoDepth(0); setAnnotationDraft(null); setEditingHighlight(null);}, [document.id]);
   const saveTextHighlight = async (selection: SelectionState, onSaved: () => void) => {
     if (!selection) return;
     const valid = capture();
@@ -101,16 +99,13 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const kind = style?.tool || (annotationTool === 'marker' ? 'marker' : 'pen');
     const width = style?.width ?? annotationWidth, color = style?.color ?? annotationColor;
     const sampled = points.length <= 1200 ? points : points.filter((_, index) => index % Math.ceil(points.length / 1200) === 0).slice(0, 1200);
-    const valid = capture(),forceNew=forceNewMark.current;
-    forceNewMark.current=false;setNewMarkPending(false);
+    const valid = capture();
     return enqueueInk(valid, async () => {
       try {
-        const marks=buildInkMarks(currentHighlights.current),bounds=inkBounds(sampled),surface=style?.surface || 'page';
-        const active=marks.find(mark=>mark.id===activeMark.current && mark.page===page && mark.surface===surface && nearby(mark.bounds,bounds));
-        const mark=forceNew?undefined:active || closestMark(marks,page,surface,bounds);
-        const regionId=mark?.id || crypto.randomUUID();
-        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, regionTags([INK_TAG, kind, ...surfaceTags(surface)],regionId),'',mark?.name || `标记 ${marks.length+1}`);
-        activeMark.current=regionId;
+        const marks=buildInkMarks(currentHighlights.current),surface=style?.surface || 'page';
+        const mark=marks.find(item=>item.page===page);
+        const regionId=`page_${page}`;
+        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, regionTags([INK_TAG, kind, ...surfaceTags(surface)],regionId),'',mark?.name || `手写标记 · PDF ${page}`);
         if (!valid()) return;
         commitInk(items => [...items, annotation]);
         pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
@@ -236,7 +231,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     window.addEventListener('keydown', handleUndoShortcut);
     return () => window.removeEventListener('keydown', handleUndoShortcut);
   }, [document.id, annotationToolbarOpen, annotationUndoDepth]);
-  return {startNewInkMark,newMarkPending,renameMark,removeMark,annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
+  return {renameMark,removeMark,annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
     saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark};
 }

@@ -30,10 +30,9 @@ test('one handwritten region is one named, jumpable mark; toolbar folds without 
  await draw(page,info.project.name==='touch',collapsedBounds.x+50,collapsedBounds.y+210);await expect(layer.locator('.annotation-stroke:not(.draft)')).toHaveCount(3);
  await page.getByRole('button',{name:'展开功能栏',exact:true}).click();
  await expect(page.getByTitle('在 PDF 上绘制标注').locator('sup')).toHaveText('1');
- await page.getByRole('button',{name:'新建标记',exact:true}).click();
  const expandedBounds=await layer.boundingBox();
  await draw(page,info.project.name==='touch',expandedBounds.x+50,expandedBounds.y+210);await expect(layer.locator('.annotation-stroke:not(.draft)')).toHaveCount(4);
- await expect(page.getByTitle('在 PDF 上绘制标注').locator('sup')).toHaveText('2');
+ await expect(page.getByTitle('在 PDF 上绘制标注').locator('sup')).toHaveText('1');
  await page.getByRole('button',{name:'完成',exact:true}).click();
  await page.getByLabel('PDF页码').fill('2');await page.getByLabel('PDF页码').press('Enter');
  await page.getByTitle('管理手写标记',{exact:true}).click();
