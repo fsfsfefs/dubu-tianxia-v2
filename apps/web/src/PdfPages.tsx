@@ -1,4 +1,4 @@
-import {inkSurface} from './features/reader/inkSurface';
+import {marginInkForCanvas,inkSurface} from './features/reader/inkSurface';
 import {useEffect, useRef, useState} from 'react';
 import {GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -143,17 +143,8 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
   const [active, setActive] = useState(false);
   const [dimensions, setDimensions] = useState(initialDimensions);
   const [rendering, setRendering] = useState(false);
-  const [marginWidth,setMarginWidth]=useState(0);
-  useEffect(()=>{
-    const root=scrollRoot.current;if(!root)return;
-    const measure=()=>{
-      const style=getComputedStyle(root);
-      const available=root.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-      setMarginWidth(Math.max(0,(available-dimensions.width*zoom)/2-8));
-    };
-    measure();const observer=new ResizeObserver(measure);observer.observe(root);
-    return()=>observer.disconnect();
-  },[scrollRoot,dimensions.width,zoom]);
+  // Both axes scale with the same PDF zoom; viewport resizing never changes ink geometry.
+  const marginWidth=dimensions.width*2*zoom;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -161,10 +152,10 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
     if (!host || !root) return;
     const observer = new IntersectionObserver(entries => {
       setActive(entries.some(entry => entry.isIntersecting));
-    }, {root, rootMargin: '1400px 0px', threshold: 0});
+    }, {root, rootMargin: `1400px ${marginWidth}px`, threshold: 0});
     observer.observe(host);
     return () => observer.disconnect();
-  }, [scrollRoot]);
+  }, [scrollRoot,marginWidth]);
 
   useEffect(() => {
     if (!active || !canvasRef.current || !textLayerRef.current) return;
@@ -246,7 +237,7 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
     ref={hostRef}
     className={`pdf-page continuous-page ${regionMode ? 'region-mode' : ''} ${annotationTool ? 'annotation-mode' : ''}`}
     data-page-number={pageNumber}
-    style={{width: `${dimensions.width * zoom}px`, height: `${dimensions.height * zoom}px`}}
+    style={{width: `${dimensions.width * zoom}px`, height: `${dimensions.height * zoom}px`,marginLeft:marginWidth,marginRight:marginWidth}}
     onMouseUp={annotationTool ? undefined : onMouseUp}
   >
     {active ? <>
@@ -260,7 +251,7 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       {marginWidth>4 && (['left','right'] as const).map(surface=><div key={surface} className={`pdf-margin pdf-margin-${surface} ${annotationTool?'annotation-enabled':''}`} data-margin={surface} style={{width:marginWidth}}>
         {annotationTool && <small>{surface==='left'?'左':'右'}侧手写区</small>}
         <AnnotationLayer documentId={documentId} page={pageNumber} dimensions={{width:marginWidth/zoom,height:dimensions.height}} zoom={zoom}
-          surface={surface} highlights={inkAnnotations.filter(item=>inkSurface(item)===surface)} tool={annotationTool} color={annotationColor} width={annotationWidth}
+          surface={surface} highlights={inkAnnotations.filter(item=>inkSurface(item)===surface).map(marginInkForCanvas)} tool={annotationTool} color={annotationColor} width={annotationWidth/2}
           eraserSize={eraserSize} penOnly={penOnly} draft={annotationDraft} onDraft={onAnnotationDraft}
           onSave={onAnnotationSave} onErase={(page,points,size,radius)=>onAnnotationErase(page,points,size,radius,surface)}/>
       </div>)}

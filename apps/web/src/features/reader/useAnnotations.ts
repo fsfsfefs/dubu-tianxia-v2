@@ -1,5 +1,5 @@
 import {buildInkMarks,regionTags,type InkMark} from './inkMarks';
-import {inkSurface,surfaceTags,type InkSurface} from './inkSurface';
+import {marginInkForCanvas,MARGIN_METRIC_TAG,inkSurface,surfaceTags,type InkSurface} from './inkSurface';
 import {useEffect, useRef, useState} from 'react';
 import {createHighlight, deleteHighlight, updateHighlight, renameInkMark, deleteInkMark, type Highlight, type HighlightRect} from '../../api';
 import type {Dispatch, SetStateAction} from 'react';
@@ -105,7 +105,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
         const marks=buildInkMarks(currentHighlights.current),surface=style?.surface || 'page';
         const mark=marks.find(item=>item.page===page);
         const regionId=`page_${page}`;
-        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, regionTags([INK_TAG, kind, ...surfaceTags(surface)],regionId),'',mark?.name || `手写标记 · PDF ${page}`);
+        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, regionTags([INK_TAG, kind, ...surfaceTags(surface),...(surface==='page'?[]:[MARGIN_METRIC_TAG])],regionId),'',mark?.name || `手写标记 · PDF ${page}`);
         if (!valid()) return;
         commitInk(items => [...items, annotation]);
         pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
@@ -119,7 +119,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
       const removed: Highlight[] = [], addedIds: string[] = [];
       const marks=buildInkMarks(currentHighlights.current);
       try {
-        for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG) && inkSurface(value)===surface)) {
+        for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG) && inkSurface(value)===surface).map(marginInkForCanvas)) {
           const segments = eraseInk(item.rects, points, dimensions, radius);
           if (!segments) continue;
           const replacements: Highlight[] = [];

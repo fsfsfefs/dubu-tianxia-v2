@@ -208,6 +208,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         if (!page) return;
         const focusOffset = Math.min(scroller.clientHeight * .42, 360);
         scroller.scrollTop = Math.max(0, pageContentTop(scroller,page) + (pending.alignStart ? 0 : pending.pageOffset * page.offsetHeight - focusOffset));
+        const pageBox=page.getBoundingClientRect(),rootBox=scroller.getBoundingClientRect();
+        scroller.scrollLeft+=pageBox.left+pageBox.width/2-rootBox.left-scroller.clientWidth/2;
         readingPositionRef.current = pending;
         pendingRestoreRef.current = null;
         readyFrame = window.requestAnimationFrame(() => { positionReadyRef.current = true; });

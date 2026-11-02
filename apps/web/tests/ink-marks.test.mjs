@@ -14,3 +14,16 @@ test('old region identities merge into one page mark and preserve a custom name'
  const marks=buildInkMarks([a,b,c]);assert.equal(marks.length,1);assert.equal(marks[0].name,'公式推导');
  assert.equal(marks[0].members.length,3);
 });
+
+
+test('legacy margin projection is stable and idempotent without mutating saved geometry',async()=>{
+ const {marginInkForCanvas,MARGIN_METRIC_TAG}=await import('../.tmp/tests/features/reader/inkSurface.js');
+ for(const side of ['left','right']){
+  const old=stroke('old',.2,.3,1,['__ink__',`__margin_${side}__`]);
+  const mapped=marginInkForCanvas(old);
+  assert.equal(mapped.rects[0].x,(side==='left'?.75:0)+.2*.25);
+  assert.equal(mapped.rects[0].y,.3);assert.equal(mapped.rects[0].width,.001);
+  assert.equal(old.rects[0].x,.2);assert.ok(mapped.tags.includes(MARGIN_METRIC_TAG));
+  assert.equal(marginInkForCanvas(mapped),mapped);
+ }
+});
