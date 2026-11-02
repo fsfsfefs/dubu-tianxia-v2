@@ -1,3 +1,4 @@
+import {StickyNoteEditor,NoteImages} from './features/notes/StickyNoteEditor';
 import {OutlineEditor} from './features/outline/OutlineEditor';
 import {ReaderSummaries} from './features/reader/ReaderSummaries';
 import {usePdfSearch} from './features/reader/usePdfSearch';
@@ -37,9 +38,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<PageRegion>(null);
   const [notePanelOpen, setNotePanelOpen] = useState(false);
-  const [stickyDraft, setStickyDraft] = useState('');
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
-  const [editingStickyContent, setEditingStickyContent] = useState('');
   const [outlineEditorOpen,setOutlineEditorOpen]=useState(false);
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
   const [textSource, setTextSource] = useState<'native' | 'ocr' | 'none'>('none');
@@ -172,7 +171,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     if (!requestedPage) return;
     setPageNumber(requestedPage);
     window.requestAnimationFrame(() => {
-      scrollRef.current?.querySelector<HTMLElement>(`[data-page-number="${requestedPage}"]`)?.scrollIntoView({block: 'start'});
+      const root=scrollRef.current,target=root?.querySelector<HTMLElement>(`[data-page-number="${requestedPage}"]`);
+      if(root && target)root.scrollTo({top:target.offsetTop,behavior:'auto'});
     });
     // targetPage mirrors ordinary scrolling, while targetPageRevision changes
     // only for an explicit external navigation request. Keeping targetPage out
@@ -250,9 +250,11 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
 
   const changePage = (next: number) => {
     const bounded = Math.max(1, Math.min(pdf?.numPages || 1, next));
+    if(pendingRestoreRef.current)pendingRestoreRef.current={pageNumber:bounded,pageOffset:0,alignStart:true};
     queueReadingPosition(bounded, 0);
     setPageNumber(bounded);
-    scrollRef.current?.querySelector<HTMLElement>(`[data-page-number="${bounded}"]`)?.scrollIntoView({behavior: 'smooth', block: 'start'});
+    const root=scrollRef.current,target=root?.querySelector<HTMLElement>(`[data-page-number="${bounded}"]`);
+    if(root && target)root.scrollTo({top:target.offsetTop,behavior:'auto'});
   };
 
   const trackVisiblePage = () => {
@@ -374,7 +376,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
       </div>
       <div className="toolbar-group page-controls" aria-label="PDF 翻页">
         <button aria-label="上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}>←</button>
-        <label><input aria-label="PDF页码" value={pageNumber} type="number" min="1" max={pdf?.numPages || 1} onChange={event => changePage(Number(event.target.value))}/> / {pdf?.numPages || '—'}</label>
+        <label><input aria-label="PDF页码" value={pageNumber} type="number" min="1" max={pdf?.numPages || 1} onChange={event => changePage(Number(event.target.value))} onKeyDown={event=>{if(event.key==='Enter')changePage(Number(event.currentTarget.value));}}/> / {pdf?.numPages || '—'}</label>
         <button aria-label="下一页" disabled={!pdf || pageNumber >= pdf.numPages} onClick={() => changePage(pageNumber + 1)}>→</button>
       </div>
       <div className="toolbar-group reader-tools">
@@ -431,13 +433,11 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     {pdf && <ReaderSummaries key={document.id} active={sidebarMode === 'summary'} page={pageNumber} summaries={chapterSummaries} onClose={() => setSidebarMode(null)} onPages={() => setSidebarMode('pages')} onOutline={() => setSidebarMode('outline')} onJump={page => {setSummaryReturn(true); changePage(page); setSidebarMode(null);}}/>}
     {notePanelOpen && <aside className="reader-note-panel" aria-label="页边便签">
       <header><div><small>PDF 第 {pageNumber} 页</small><strong>页边便签</strong></div><button aria-label="关闭便签栏" onClick={() => setNotePanelOpen(false)}>×</button></header>
-      <form onSubmit={event => {event.preventDefault(); const content = stickyDraft.trim(); if (!content || !onCreatePageNote) return; void onCreatePageNote(pageNumber, content).then(() => setStickyDraft('')).catch(() => undefined);}}>
-        <textarea value={stickyDraft} onChange={event => setStickyDraft(event.target.value)} placeholder="记录这一页的想法、疑问或待办…"/>
-        <button disabled={!stickyDraft.trim() || !onCreatePageNote}>添加便签</button>
-      </form>
+      <StickyNoteEditor key={`${document.id}-${pageNumber}`} onSave={async(content,files)=>{if(onCreatePageNote)await onCreatePageNote(pageNumber,content,files);}}/>
       <div className="page-sticky-list">{pageNotes.map(note => <article key={note.id}>
-        <header><span>第 {note.page_number} 页</span><nav><button onClick={() => {setEditingStickyId(note.id); setEditingStickyContent(note.content);}}>编辑</button><button onClick={() => void onDeletePageNote?.(note).catch(() => undefined)}>删除</button></nav></header>
-        {editingStickyId === note.id ? <div className="sticky-editor"><textarea value={editingStickyContent} onChange={event => setEditingStickyContent(event.target.value)}/><footer><button onClick={() => setEditingStickyId(null)}>取消</button><button disabled={!editingStickyContent.trim()} onClick={() => {if (!onUpdatePageNote) return; void onUpdatePageNote(note, editingStickyContent.trim()).then(() => setEditingStickyId(null)).catch(() => undefined);}}>保存</button></footer></div> : <p>{note.content}</p>}
+        <header><span>第 {note.page_number} 页</span><nav><button onClick={() => {setEditingStickyId(note.id);}}>编辑</button><button onClick={() => void onDeletePageNote?.(note).catch(() => undefined)}>删除</button></nav></header>
+        {editingStickyId === note.id ? <StickyNoteEditor key={note.id} content={note.content} images={note.images} onCancel={()=>setEditingStickyId(null)} onSave={async(content,files,keepIds)=>{if(onUpdatePageNote)await onUpdatePageNote(note,content,files,keepIds);setEditingStickyId(null);}}/> : <><p>{note.content}</p><NoteImages images={note.images}/></>}
+
       </article>)}{!pageNotes.length && <div className="empty-sticky"><span>便签会固定在当前 PDF 页旁边</span><small>翻到其他页面时，这里会显示对应页面的便签。</small></div>}</div>
     </aside>}
     {sourceTrace && sourceTrace.locations.length > 0 && <aside className="source-trace-bar" aria-label="原文溯源导航">
@@ -473,7 +473,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
           annotationDraft={annotationDraft}
           onAnnotationDraft={setAnnotationDraft}
           onAnnotationSave={(page, points, style) => void saveInkAnnotation(page, points, style)}
-          onAnnotationErase={(page, points, dimensions, radius) => eraseInkAt(page, points, dimensions, radius)}
+          onAnnotationErase={(page, points, dimensions, radius, surface) => eraseInkAt(page, points, dimensions, radius, surface)}
           pageTextCache={pageTextCache}
           ocrCache={ocrCache}
           onTextReady={handleTextReady}

@@ -1,3 +1,4 @@
+import './features/notes/StickyNotes.css';
 import './features/outline/OutlineEditor.css';
 import './features/reader/SummaryNavigation.css';
 import './features/assistant/Images.css';

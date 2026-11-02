@@ -140,7 +140,7 @@ class NoteInput(BaseModel):
 
 
 class NoteUpdateInput(BaseModel):
-    content: str = Field(min_length=1, max_length=20000)
+    content: str = Field(min_length=0, max_length=20000)
     title: str = Field(default="", max_length=300)
     tags: list[str] = Field(default_factory=list, max_length=30)
     pinned: bool = False
@@ -196,3 +196,10 @@ class OutlineGenerateInput(BaseModel):
 class OutlineSaveInput(BaseModel):
     outline: list[OutlineEntryInput] = Field(min_length=1, max_length=1000)
     expected_revision: str = Field(min_length=64, max_length=64)
+
+
+class StickyNoteInput(BaseModel):
+    note_id: str | None = None
+    page_number: int = Field(ge=1)
+    content: str = Field(default="", max_length=20000)
+    keep_image_ids: list[str] = Field(default_factory=list, max_length=1000)

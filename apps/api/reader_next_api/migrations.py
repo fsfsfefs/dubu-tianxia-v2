@@ -196,7 +196,21 @@ def _legacy_columns(connection):
         if name not in highlight_columns:
             connection.execute(f"ALTER TABLE highlights ADD COLUMN {name} {definition}")
 
-MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns))
+def _note_images(connection):
+    connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS notes_owner ON notes(id,document_id)")
+    connection.execute("""CREATE TABLE IF NOT EXISTS note_images (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        mime_type TEXT NOT NULL,
+        byte_size INTEGER NOT NULL,
+        data BLOB NOT NULL,
+        FOREIGN KEY(note_id,document_id) REFERENCES notes(id,document_id) ON DELETE CASCADE
+    )""")
+    connection.execute("CREATE INDEX IF NOT EXISTS note_images_note ON note_images(document_id,note_id)")
+
+
+MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images))
 
 
 def migrate(connection, migrations=MIGRATIONS):

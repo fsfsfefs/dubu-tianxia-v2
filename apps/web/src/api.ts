@@ -61,7 +61,9 @@ export type Highlight = {
   id: string; document_id: string; page_number: number; text: string;
   rects: HighlightRect[]; color: 'yellow' | 'green' | 'blue' | 'pink' | 'black' | 'red'; comment: string; tags: string[]; created_at: string; updated_at?: string;
 };
+export type NoteImage = {id:string;mime_type:string;byte_size:number;url:string};
 export type Note = {
+  images?: NoteImage[];
   id: string; document_id: string; page_number: number | null; excerpt: string;
   content: string; title: string; tags: string[]; pinned: boolean; created_at: string; updated_at?: string;
 };
@@ -466,4 +468,12 @@ export async function generateDocumentOutline(documentId: string, profileId: str
 }
 export async function saveDocumentOutline(documentId: string, outline: ImportedOutlineEntry[], revision: string, signal?: AbortSignal): Promise<DocumentOutline> {
   return json<DocumentOutline>(await fetch(`/api/documents/${documentId}/outline`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline,expected_revision:revision}),signal}));
+}
+
+
+export async function saveStickyNote(documentId:string, page:number, content:string, files:File[], note?:Note, keepImageIds?:string[]):Promise<Note>{
+  const form=new FormData();
+  form.append('payload',JSON.stringify({note_id:note?.id,page_number:page,content,keep_image_ids:keepImageIds || note?.images?.map(image=>image.id) || []}));
+  files.forEach(file=>form.append('files',file));
+  return (await json<{note:Note}>(await fetch(`/api/documents/${documentId}/sticky-notes`,{method:'POST',body:form}))).note;
 }

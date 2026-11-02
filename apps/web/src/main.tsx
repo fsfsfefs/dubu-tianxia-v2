@@ -3,8 +3,8 @@ import {createRoot} from 'react-dom/client';
 import {App} from './App';
 import {installAndroidCompatibility} from './androidCompatibility';
 
+installAndroidCompatibility();
 if (navigator.userAgent.includes('DubuTablet/')) {
-  installAndroidCompatibility();
   document.documentElement.dataset.platform = 'android';
   void import('./android-tablet.css');
 }

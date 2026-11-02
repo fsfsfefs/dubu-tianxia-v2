@@ -26,3 +26,23 @@ test('factory WebView compatibility supports PDF promises and abort reasons',asy
  for await(const part of pending){assert.equal(part,'first');break;}
  assert.equal(cancelled,true);assert.equal(pending.locked,false);
 });
+
+
+test('PDF Map upsert compatibility caches undefined, validates callbacks and preserves native implementations',()=>{
+ class LegacyMap extends Map {}
+ Object.defineProperty(LegacyMap.prototype,'getOrInsertComputed',{value:undefined,configurable:true});
+ Object.defineProperty(LegacyMap.prototype,'getOrInsert',{value:undefined,configurable:true});
+ const code=readFileSync(new URL('../.tmp/tests/androidCompatibility.js',import.meta.url),'utf8').replace('export function','function');
+ const scope={Map:LegacyMap,Promise,AbortSignal,ReadableStream,AbortController,Event};
+ vm.runInNewContext(code+';installAndroidCompatibility();',scope);
+ const map=new LegacyMap();let calls=0;
+ assert.equal(map.getOrInsertComputed('cached',()=>{calls++;return undefined;}),undefined);
+ assert.equal(map.getOrInsertComputed('cached',()=>{calls++;return 'wrong';}),undefined);assert.equal(calls,1);
+ assert.throws(()=>map.getOrInsertComputed('cached',null),/callback/);
+ assert.equal(map.getOrInsert('x',2),2);assert.equal(map.getOrInsert('x',9),2);
+ assert.throws(()=>map.getOrInsertComputed('error',()=>{throw Error('fail');}),/fail/);assert.equal(map.has('error'),false);
+ map.getOrInsertComputed(-0,key=>{assert.equal(Object.is(key,-0),false);return 0;});
+ const installed=LegacyMap.prototype.getOrInsertComputed;
+ vm.runInNewContext(code+';installAndroidCompatibility();',scope);
+ assert.equal(LegacyMap.prototype.getOrInsertComputed,installed);
+});

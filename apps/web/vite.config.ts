@@ -10,7 +10,7 @@ export default defineConfig(({mode}) => {
     resolve: {alias: mode === 'android' ? [
       {find: /^pdfjs-dist$/, replacement: 'pdfjs-dist/legacy/build/pdf.mjs'},
       {find: /^pdfjs-dist\/build\/pdf.worker.min.mjs\?url$/, replacement: fileURLToPath(new URL('./src/androidPdfWorker.ts', import.meta.url)) + '?worker&url'},
-    ] : []},
+    ] : [{find: /^pdfjs-dist\/build\/pdf.worker.min.mjs\?url$/, replacement: fileURLToPath(new URL('./src/pdfWorker.ts', import.meta.url)) + '?worker&url'}]},
     build: {manifest: true},
     worker: {format: 'es'},
     server: {

@@ -1,3 +1,4 @@
+import {inkSurface,surfaceTags,type InkSurface} from './inkSurface';
 import {useEffect, useRef, useState} from 'react';
 import {createHighlight, deleteHighlight, updateHighlight, type Highlight, type HighlightRect} from '../../api';
 import type {Dispatch, SetStateAction} from 'react';
@@ -99,7 +100,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const valid = capture();
     return enqueueInk(valid, async () => {
       try {
-        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, [INK_TAG, kind]);
+        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, [INK_TAG, kind, ...surfaceTags(style?.surface)]);
         if (!valid()) return;
         commitInk(items => [...items, annotation]);
         pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
@@ -107,12 +108,12 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     });
   };
 
-  const eraseInkAt = async (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}, radius?: number) => {
+  const eraseInkAt = async (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}, radius?: number, surface: InkSurface = 'page') => {
     const valid = capture();
     return enqueueInk(valid, async () => {
       const removed: Highlight[] = [], addedIds: string[] = [];
       try {
-        for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG))) {
+        for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG) && inkSurface(value)===surface)) {
           const segments = eraseInk(item.rects, points, dimensions, radius);
           if (!segments) continue;
           const replacements: Highlight[] = [];

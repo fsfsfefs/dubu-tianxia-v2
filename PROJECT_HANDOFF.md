@@ -2,6 +2,8 @@
 
 2026-11-02：原PDF目录优先、无目录AI草稿及人工校对已实现。统一GET/PUT /documents/{id}/outline、POST outline/generate，目录校对带原文预览，复用OCR；AI不自动覆盖，保存校验版本与页码层级。目录编辑与任务提交互斥，旧总结保留。当前文件接入仅PDF。
 
+2026-11-02：便签图片20MB（单张及每便签合计）、PDF左右空白手写及getOrInsertComputed兼容修复。迁移3增加note_images，完整备份携带BLOB，有图单书格式2使用独立图片条目、重映射note_id。页边笔迹沿用highlights并标记左右surface；主线程及pdfWorker均安装按能力补丁。
+
 当前项目目录：`D:\dubutianxian完善`。
 
 2026-11-02：compatibility.py支持项目v1完整ZIP与历史格式1单书数据升级；完整ZIP先在staging校验迁移，旧序号章节按目录保守匹配，冲突/不明归属留作历史，FTS补建与本地导入模型路径重定位。全库恢复后初始化失败自动回滚，兼容过程不调用聊天模型。

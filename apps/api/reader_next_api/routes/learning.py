@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import Response
+from pydantic import ValidationError
+from ..schemas import StickyNoteInput
+from ..note_images import MAX_NOTE_IMAGES
 
 from ..providers import provider_error_message
 
@@ -130,6 +134,30 @@ def create_router(runtime: Runtime) -> APIRouter:
             raise HTTPException(404, str(error)) from error
         if not deleted:
             raise HTTPException(404, '高亮不存在。')
+
+    @router.post('/api/documents/{document_id}/sticky-notes')
+    async def save_sticky_note(document_id: str, payload: str=Form(...), files: list[UploadFile]=File(default=[])):
+        try:
+            data=StickyNoteInput.model_validate_json(payload)
+            images=[]
+            for upload in files:
+                raw=await upload.read(MAX_NOTE_IMAGES+1)
+                if len(raw)>MAX_NOTE_IMAGES or sum(map(len,images))+len(raw)>MAX_NOTE_IMAGES:
+                    raise HTTPException(413,"便签图片单张及合计不能超过20MB。")
+                images.append(raw)
+            return {"note":runtime.repository.save_sticky_note(document_id,data.note_id,data.page_number,data.content,data.keep_image_ids,images)}
+        except LookupError as error:
+            raise HTTPException(404,str(error)) from error
+        except (ValueError,ValidationError) as error:
+            raise HTTPException(422,str(error)) from error
+
+    @router.get('/api/documents/{document_id}/notes/{note_id}/images/{image_id}')
+    def get_note_image(document_id: str,note_id: str,image_id: str):
+        try:
+            image=runtime.repository.note_image(document_id,note_id,image_id)
+            return Response(image["data"],media_type=image["mime_type"],headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"})
+        except LookupError as error:
+            raise HTTPException(404,str(error)) from error
 
     @router.get('/api/documents/{document_id}/notes')
     def document_notes(document_id: str) -> dict:

@@ -83,3 +83,10 @@ RetrievalService负责模型管理、选择回滚和向量回填/重建；Reposi
 routes/outline.py与document_outline.py统一解析已保存document_outlines或原PDF书签。GET返回目录、来源、总页数与内容修订hash；POST generate仅在无目录时读取缓存OCR/原生文字，保留前20页及全书各页开头（最多3000页、有限字符），单次模型调用、180秒超时，返回校对草稿而不写库。PUT保存校验标题、实际页码、顺序、层级和expected_revision，复用import_learning_structure保留历史总结及范围键规则。BackgroundTaskManager.edit_book持有提交锁，目录保存/导入与同书在途任务互斥，避免暂停请求后仍写入的分块冲突。
 
 features/outline/OutlineEditor提供模型选择、原文/OCR准备进度与取消、可编辑草稿及延迟加载PDF原文预览；已存在目录不触发生成。pdfOutline与PdfReader使用同一GET接口，无旧目录缓存；总览保存时递增请求代次避免迟到读取覆盖编辑结果。当前文档接入仍限PDF，不增加其他文件格式解析器。
+
+
+## 便签附件与页边笔迹（2026-11-02）
+
+迁移3增加note_images二进制附件，复合外键约束笔记/文档归属，POST sticky-notes通过multipart在一事务保存文字、保留附件清单和新图片；单张及每便签附件总量20MiB，Pillow校验实际格式，读取路由限定文档/笔记/图片并设置nosniff。列表只传附件元信息，图片按需GET。完整ZIP通过SQLite快照携带；单书无图仍格式1，有图使用格式2、note-images/N.bin条目并逐文件大小/hash/真实图片校验、重新关联note_id。
+
+正文和左右留白复用AnnotationLayer，页边笔迹在现有highlights tags增加__margin_left__/__margin_right__，均保留__ink__。useAnnotations按surface隔离擦除并共享撤销队列，AnnotationDraft携带surface防止串区预览；留白宽度由阅读区域ResizeObserver测量，正文几何不变。浏览器兼容模块在main及独立PDF Worker入口执行，按能力补齐Map upsert等接口，Worker延迟加载原PDF.js模块。

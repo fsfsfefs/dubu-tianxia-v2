@@ -1,3 +1,4 @@
+import {inkSurface} from './features/reader/inkSurface';
 import {useEffect, useRef, useState} from 'react';
 import {GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -15,7 +16,7 @@ export type OutlineEntry = {title: string; page: number; depth: number};
 export type PageRegion = {page: number; rect: HighlightRect} | null;
 export type AnnotationTool = 'pen' | 'marker' | 'eraser' | null;
 export type AnnotationPoint = {x: number; y: number};
-export type AnnotationDraft = {page: number; points: AnnotationPoint[]};
+export type AnnotationDraft = {page: number; points: AnnotationPoint[]; surface?: 'page'|'left'|'right'};
 export type AnnotationUndoAction = {type: 'add' | 'erase'; addedIds: string[]; removed?: Highlight[]};
 export const INK_TAG = '__ink__';
 
@@ -37,8 +38,8 @@ export type ReaderProps = {
   assistantOpen?: boolean;
   notes?: Note[];
   chapterSummaries?: ChapterSummary[];
-  onCreatePageNote?: (page: number, content: string) => Promise<void>;
-  onUpdatePageNote?: (note: Note, content: string) => Promise<void>;
+  onCreatePageNote?: (page: number, content: string, files?: File[]) => Promise<void>;
+  onUpdatePageNote?: (note: Note, content: string, files?: File[], keepImageIds?:string[]) => Promise<void>;
   onDeletePageNote?: (note: Note) => Promise<void>;
   targetPage?: number;
   targetPageRevision?: number;
@@ -67,7 +68,7 @@ export type ContinuousPageProps = {
   annotationDraft: AnnotationDraft | null;
   onAnnotationDraft: (draft: AnnotationDraft | null) => void;
   onAnnotationSave: (page: number, points: AnnotationPoint[], style: InkStyle) => void;
-  onAnnotationErase: (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}, radius: number) => Promise<void>;
+  onAnnotationErase: (page: number, points: AnnotationPoint[], dimensions: {width: number; height: number}, radius: number, surface?: 'page'|'left'|'right') => Promise<void>;
   pageTextCache: React.MutableRefObject<Map<number, string>>;
   ocrCache: React.MutableRefObject<Map<number, OcrWord[]>>;
   onTextReady: (page: number, text: string, source: 'native' | 'ocr') => void;
@@ -142,6 +143,17 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
   const [active, setActive] = useState(false);
   const [dimensions, setDimensions] = useState(initialDimensions);
   const [rendering, setRendering] = useState(false);
+  const [marginWidth,setMarginWidth]=useState(0);
+  useEffect(()=>{
+    const root=scrollRoot.current;if(!root)return;
+    const measure=()=>{
+      const style=getComputedStyle(root);
+      const available=root.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+      setMarginWidth(Math.max(0,(available-dimensions.width*zoom)/2-8));
+    };
+    measure();const observer=new ResizeObserver(measure);observer.observe(root);
+    return()=>observer.disconnect();
+  },[scrollRoot,dimensions.width,zoom]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -239,9 +251,16 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       <div ref={textLayerRef} className="textLayer"/>
       <div className="highlight-layer">{textHighlights.flatMap(item => item.rects.map((rect, index) => <span key={`${item.id}-${index}`} className={`highlight ${item.color}`} title={item.text} style={{left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`}}/>))}</div>
       <AnnotationLayer documentId={documentId} page={pageNumber} dimensions={dimensions} zoom={zoom}
-        highlights={inkAnnotations} tool={annotationTool} color={annotationColor} width={annotationWidth}
+        highlights={inkAnnotations.filter(item=>inkSurface(item)==='page')} tool={annotationTool} color={annotationColor} width={annotationWidth}
         eraserSize={eraserSize} penOnly={penOnly} draft={annotationDraft} onDraft={onAnnotationDraft}
         onSave={onAnnotationSave} onErase={onAnnotationErase}/>
+      {marginWidth>4 && (['left','right'] as const).map(surface=><div key={surface} className={`pdf-margin pdf-margin-${surface} ${annotationTool?'annotation-enabled':''}`} data-margin={surface} style={{width:marginWidth}}>
+        {annotationTool && <small>{surface==='left'?'左':'右'}侧手写区</small>}
+        <AnnotationLayer documentId={documentId} page={pageNumber} dimensions={{width:marginWidth/zoom,height:dimensions.height}} zoom={zoom}
+          surface={surface} highlights={inkAnnotations.filter(item=>inkSurface(item)===surface)} tool={annotationTool} color={annotationColor} width={annotationWidth}
+          eraserSize={eraserSize} penOnly={penOnly} draft={annotationDraft} onDraft={onAnnotationDraft}
+          onSave={onAnnotationSave} onErase={(page,points,size,radius)=>onAnnotationErase(page,points,size,radius,surface)}/>
+      </div>)}
       {rendering && <div className="page-loading">正在载入第 {pageNumber} 页…</div>}
       {regionMode && !annotationTool && <div className="region-capture" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>{pageRegion && <span style={{left: `${pageRegion.x * 100}%`, top: `${pageRegion.y * 100}%`, width: `${pageRegion.width * 100}%`, height: `${pageRegion.height * 100}%`}}/>}</div>}
     </> : <div className="page-placeholder">PDF {pageNumber}</div>}

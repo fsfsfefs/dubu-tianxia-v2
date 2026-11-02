@@ -1,5 +1,21 @@
-/** APIs absent in Android 14's factory WebView but used by current PDF.js. */
+/** Missing browser APIs used by PDF.js in desktop and tablet WebViews. */
 export function installAndroidCompatibility() {
+  for (const computed of [false, true]) {
+    const name = computed ? 'getOrInsertComputed' : 'getOrInsert';
+    if (typeof (Map.prototype as unknown as Record<string,unknown>)[name] === 'function') continue;
+    Object.defineProperty(Map.prototype, name, {configurable:true,writable:true,
+      value: function(this: Map<unknown,unknown>, key: unknown, value: unknown) {
+        // Native has/get validate the receiver; present undefined values still count.
+        const exists=Map.prototype.has.call(this,key);
+        if(computed && typeof value!=='function')throw new TypeError('Expected callback');
+        if(exists)return Map.prototype.get.call(this,key);
+        if(key===0)key=0;
+        const next=computed?Reflect.apply(value as Function,undefined,[key]):value;
+        Map.prototype.set.call(this,key,next);return next;
+      },
+    });
+  }
+
   if (typeof ReadableStream !== 'undefined') {
     const prototype = ReadableStream.prototype as unknown as Record<PropertyKey, unknown>;
     if (typeof prototype.values !== 'function') {

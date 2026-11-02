@@ -5,6 +5,7 @@ from uuid import uuid4
 
 
 from ..chapters import chapter_key
+from ..note_images import image_metadata, validate_note_image, MAX_NOTE_IMAGES
 
 
 class LearningRepository:
@@ -213,7 +214,11 @@ class LearningRepository:
                 "SELECT * FROM notes WHERE document_id = ? ORDER BY pinned DESC, updated_at DESC, created_at DESC",
                 (document_id,),
             ).fetchall()
-        return [{**dict(row), "tags": json.loads(row["tags_json"]), "pinned": bool(row["pinned"])} for row in rows]
+        with self.connect() as connection:
+            attachments = connection.execute("SELECT id,document_id,note_id,mime_type,byte_size FROM note_images WHERE document_id=?",(document_id,)).fetchall()
+        by_note = {}
+        for item in attachments: by_note.setdefault(item["note_id"],[]).append(image_metadata(item))
+        return [{**dict(row), "tags": json.loads(row["tags_json"]), "pinned": bool(row["pinned"]), "images":by_note.get(row["id"],[])} for row in rows]
 
 
     def add_note(self, document_id: str, page_number: int | None, excerpt: str, content: str, title: str = "", tags: list[str] | None = None, pinned: bool = False) -> dict:
@@ -225,7 +230,7 @@ class LearningRepository:
                 (note_id, document_id, page_number, excerpt, content, title, json.dumps(tags or [], ensure_ascii=False), int(pinned)),
             )
             row = connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
-        return {**dict(row), "tags": json.loads(row["tags_json"]), "pinned": bool(row["pinned"])}
+        return next(note for note in self.list_notes(document_id) if note["id"]==row["id"])
 
 
     def delete_note(self, document_id: str, note_id: str) -> bool:
@@ -247,7 +252,7 @@ class LearningRepository:
             if cursor.rowcount == 0:
                 raise LookupError("笔记不存在。")
             row = connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
-        return {**dict(row), "tags": json.loads(row["tags_json"]), "pinned": bool(row["pinned"])}
+        return next(note for note in self.list_notes(document_id) if note["id"]==row["id"])
 
 
     def list_flashcards(self, document_id: str) -> list[dict]:
@@ -368,3 +373,34 @@ class LearningRepository:
                     values = [new if col == "chapter_key" else row[col] for col in columns]
                     connection.execute(f"INSERT OR IGNORE INTO {table} ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", values)
                     connection.execute(f"DELETE FROM {table} WHERE document_id=? AND chapter_key=?", (document_id, old))
+
+
+    def save_sticky_note(self, document_id, note_id, page, content, keep_image_ids, new_images):
+        self.document_path(document_id)
+        validated=[(data,validate_note_image(data)) for data in new_images]
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            original=connection.execute("SELECT * FROM notes WHERE id=? AND document_id=?",(note_id,document_id)).fetchone() if note_id else None
+            if note_id and (original is None or "页边便签" not in json.loads(original["tags_json"])):
+                raise LookupError("页边便签不存在。")
+            existing={row["id"]:dict(row) for row in connection.execute("SELECT id,byte_size FROM note_images WHERE note_id=? AND document_id=?",(note_id,document_id))}
+            if set(keep_image_ids)-set(existing):raise ValueError("便签图片归属不匹配，请重新打开便签。")
+            if sum(existing[key]["byte_size"] for key in set(keep_image_ids))+sum(len(data) for data,_ in validated)>MAX_NOTE_IMAGES:
+                raise ValueError("每条便签的图片合计不能超过20MB。")
+            if not content.strip() and not keep_image_ids and not validated:raise ValueError("便签需要文字或图片。")
+            if original:
+                connection.execute("UPDATE notes SET content=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(content.strip(),note_id))
+                for image_id in set(existing)-set(keep_image_ids):connection.execute("DELETE FROM note_images WHERE id=?",(image_id,))
+            else:
+                note_id=str(uuid4())
+                connection.execute("INSERT INTO notes(id,document_id,page_number,content,title,tags_json) VALUES(?,?,?,?,?,?)",(note_id,document_id,page,content.strip(),f"第 {page} 页便签",json.dumps(["页边便签"])))
+            for data,mime in validated:
+                connection.execute("INSERT INTO note_images VALUES(?,?,?,?,?,?)",(str(uuid4()),document_id,note_id,mime,len(data),data))
+        return next(note for note in self.list_notes(document_id) if note["id"]==note_id)
+
+    def note_image(self, document_id, note_id, image_id):
+        self.document_path(document_id)
+        with self.connect() as connection:
+            row=connection.execute("SELECT * FROM note_images WHERE document_id=? AND note_id=? AND id=?",(document_id,note_id,image_id)).fetchone()
+        if row is None:raise LookupError("便签图片不存在。")
+        return dict(row)

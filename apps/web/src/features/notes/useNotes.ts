@@ -1,6 +1,6 @@
 import {useDocumentScope} from '../../shared/useDocumentScope';
 import {useState} from 'react';
-import {Note, DocumentRecord, createNote, deleteNote, updateNote} from '../../api';
+import {Note, DocumentRecord, createNote, deleteNote, updateNote, saveStickyNote} from '../../api';
 
 export function useNotes(activeDocument: DocumentRecord | null, currentPage: number, excerpt: string, setError: (message: string) => void) {
   const capture = useDocumentScope(activeDocument?.id);
@@ -31,11 +31,11 @@ export function useNotes(activeDocument: DocumentRecord | null, currentPage: num
     catch (reason) { if (valid()) setError(reason instanceof Error ? reason.message : '删除失败'); }
   };
 
-  const createPageStickyNote = async (page: number, content: string) => {
+  const createPageStickyNote = async (page: number, content: string, files: File[] = []) => {
     const valid = capture();
-    if (!activeDocument || !content.trim()) return;
+    if (!activeDocument || (!content.trim() && !files.length)) return;
     try {
-      const note = await createNote(activeDocument.id, {page_number: page, excerpt: '', content: content.trim(), title: `第 ${page} 页便签`, tags: ['页边便签'], pinned: false});
+      const note = await saveStickyNote(activeDocument.id,page,content.trim(),files);
       if (!valid()) throw new DOMException('教材已切换', 'AbortError');
       setNotes(items => [note, ...items]);
     } catch (reason) {
@@ -44,11 +44,11 @@ export function useNotes(activeDocument: DocumentRecord | null, currentPage: num
     }
   };
 
-  const updatePageStickyNote = async (note: Note, content: string) => {
+  const updatePageStickyNote = async (note: Note, content: string, files: File[] = [], keepImageIds: string[] = (note.images || []).map(image=>image.id)) => {
     const valid = capture();
-    if (!activeDocument || !content.trim()) return;
+    if (!activeDocument || (!content.trim() && !files.length && !keepImageIds.length)) return;
     try {
-      const updated = await updateNote(activeDocument.id, note.id, {content: content.trim(), title: note.title || `第 ${note.page_number || currentPage} 页便签`, tags: [...new Set([...(note.tags || []), '页边便签'])], pinned: note.pinned || false});
+      const updated = await saveStickyNote(activeDocument.id,note.page_number || currentPage,content.trim(),files,note,keepImageIds);
       if (!valid()) throw new DOMException('教材已切换', 'AbortError');
       setNotes(items => items.map(item => item.id === note.id ? updated : item));
     } catch (reason) {

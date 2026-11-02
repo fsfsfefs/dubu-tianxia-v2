@@ -7,6 +7,7 @@ async function openBook(page,title){
  await expect(page.locator('.continuous-page canvas').first()).toBeVisible();
  // Each scenario starts on an explicit page, independently of another project's saved reading position.
  await page.locator('.page-controls input').fill('1');
+ await page.locator('.page-controls input').press('Enter');
  await expect(page.locator('.continuous-page').first()).toBeInViewport({ratio:.7});
 }
 async function stroke(page,project){
