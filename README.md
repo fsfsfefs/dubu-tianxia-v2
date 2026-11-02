@@ -16,7 +16,7 @@
 
 ## 启动
 
-依赖已安装时，运行 `start-dev.cmd`，或运行 `restart-dev.cmd` 隐藏启动并检查服务就绪。
+依赖已安装时，运行 `start-dev.cmd`，或运行 `restart-dev.cmd` 隐藏启动并检查服务就绪。重启脚本自动查找PATH、Windows标准安装位置及当前用户Codex运行时中的Node，不依赖npm；从Windows资源管理器双击运行可避免继承受限执行环境。
 第二版使用前端 http://127.0.0.1:5174 和后端 http://127.0.0.1:8790，与第一版端口分离。
 
 新环境使用 Windows x64 / Python 3.12，在 `apps/api` 创建 `.venv`，先执行 `.\.venv\Scripts\python.exe -m pip install -r requirements-win-py312.lock`，再执行 `.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e ".[test]"；在 `apps/web` 执行 `npm ci`。

@@ -5,14 +5,32 @@ $apiRoot = Join-Path $projectRoot 'apps\api'
 $webRoot = Join-Path $projectRoot 'apps\web'
 $apiPython = Join-Path $apiRoot '.venv\Scripts\python.exe'
 $viteScript = Join-Path $webRoot 'node_modules\vite\bin\vite.js'
-$nodeCommand = Get-Command node.exe -ErrorAction Stop
-$nodePath = $nodeCommand.Source
+# Explorer-launched terminals may not inherit Codex's private Node PATH.
+$nodeCommand = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue
+$nodeCandidates = @()
+if ($nodeCommand) { $nodeCandidates += $nodeCommand.Source }
+foreach ($baseDir in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if ($baseDir) { $nodeCandidates += Join-Path $baseDir 'nodejs\node.exe' }
+}
+if ($env:LOCALAPPDATA) {
+    $nodeCandidates += Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe'
+}
+if ($env:USERPROFILE) {
+    $nodeCandidates += Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
+}
+$nodePath = $nodeCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if (-not $nodePath) {
+    throw '未找到 Node.js。请安装 Node.js 24 LTS，或将已有 node.exe 所在目录加入 Windows PATH 后重试。'
+}
+& $nodePath --version
+if ($LASTEXITCODE -ne 0) { throw "Node.js 无法运行：$nodePath" }
 foreach ($file in @($apiPython, $viteScript, $nodePath)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
         throw "缺少启动依赖：$file。请先安装项目依赖。"
     }
 }
 if ($ValidateOnly) {
+    Write-Host "Node.js：$nodePath"
     Write-Host '启动脚本与本地依赖检查通过（未停止或启动任何服务）。'
     exit 0
 }
