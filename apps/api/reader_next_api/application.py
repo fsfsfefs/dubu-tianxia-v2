@@ -19,7 +19,7 @@ class MaintenanceMiddleware:
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             return await self.app(scope, receive, send)
-        exclusive = scope['path'] == '/api/backup/restore' and scope['method'] == 'POST'
+        exclusive = (scope['path'] == '/api/backup/restore' and scope['method'] == 'POST') or scope['path'].startswith('/api/backup/book')
         lease = self.runtime.lease(exclusive)
         try:
             lease.__enter__()

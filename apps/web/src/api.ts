@@ -438,3 +438,20 @@ export async function reconcileOutline(documentId: string, outline: Array<{title
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({outline}),
   }));
 }
+
+async function bookBackupRequest(url: string, init?: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, init);
+    if (response.status !== 503 || attempt >= 2) return response;
+    await new Promise(resolve => window.setTimeout(resolve, 250));
+  }
+}
+export async function downloadBookBackup(documentId: string, summaryProfileId = ''): Promise<Blob> {
+  const response = await bookBackupRequest(`/api/backup/book/${encodeURIComponent(documentId)}?summary_profile_id=${encodeURIComponent(summaryProfileId)}`);
+  if (!response.ok) await json(response);
+  return response.blob();
+}
+export async function importBookBackup(file: File, replaceExisting = false): Promise<{document_id: string; replaced: boolean; safety_backup: string | null; summary_profile_id?: string; message: string}> {
+  const body = new FormData(); body.append('file', file); body.append('replace_existing', String(replaceExisting));
+  return json(await bookBackupRequest('/api/backup/book', {method: 'POST', body}));
+}

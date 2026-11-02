@@ -37,6 +37,18 @@ class BackgroundTaskManager:
         self.summary_executor.shutdown(wait=True, cancel_futures=True)
         self.executor.shutdown(wait=True, cancel_futures=True)
 
+    def book_busy(self, document_id: str) -> bool:
+        with self._lock:
+            for task_id, future in self._futures.items():
+                if future.done():
+                    continue
+                try:
+                    if self.repository.background_task(task_id).get("document_id") == document_id:
+                        return True
+                except LookupError:
+                    continue
+            return False
+
     def list(self) -> list[dict]:
         return self.repository.list_background_tasks()
 

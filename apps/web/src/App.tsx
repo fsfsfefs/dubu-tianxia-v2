@@ -21,7 +21,7 @@ import React, {lazy, Suspense, useEffect, useRef, useState} from 'react';
 import {
   createFolder, deleteDocument, deleteFolder, DocumentRecord, exportAllData, FolderRecord, listDocuments, listFolders, listProfiles, ModelProfile, moveDocument, renameDocument, renameFolder,
   uploadDocument, } from './api';
-import {downloadFullBackup, restoreFullBackup} from './api';
+import {downloadBookBackup, importBookBackup, downloadFullBackup, restoreFullBackup} from './api';
 import {BackgroundTask, cancelBackgroundTask, clearFinishedBackgroundTasks, createIndexTasks, listBackgroundTasks, retryBackgroundTask} from './api';
 import './styles/foundation.css';
 import './styles/workspace.css';
@@ -81,6 +81,7 @@ export function App() {
   const layout = usePanelLayout();
   const {assistantWidth, resizePanelByKeyboard, beginPanelResize} = layout;
   const fileInput = useRef<HTMLInputElement>(null);
+  const bookBackupInput = useRef<HTMLInputElement>(null);
   const backupInput = useRef<HTMLInputElement>(null);
   useAutoDismiss(error, () => setError(''));
 
@@ -101,6 +102,7 @@ export function App() {
   useEffect(() => { load().catch(error => setError(error.message)); }, []);
 
   useEffect(() => {
+    if (backupBusy) return;
     let alive = true;
     const refresh = () => listBackgroundTasks().then(tasks => {
       if (alive) setBackgroundTasks(tasks);
@@ -108,7 +110,7 @@ export function App() {
     void refresh();
     const timer = window.setInterval(refresh, 1800);
     return () => { alive = false; window.clearInterval(timer); };
-  }, []);
+  }, [backupBusy]);
 
   useEffect(() => {
     if (activeDocument) setSelectedBookIds(items => items.length ? items : [activeDocument.id]);
@@ -248,6 +250,37 @@ export function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const exportBook = async (book: DocumentRecord) => {
+    if (backupBusy) return;
+    setBackupBusy(true); setError('');
+    try {
+      let selectedModel = '';
+      try { selectedModel = JSON.parse(window.localStorage.getItem('reader-next-summary-models') || '{}')?.[book.id] || ''; } catch { /* Export persisted learning data even if local preferences are unavailable. */ }
+      downloadBlob(await downloadBookBackup(book.id, selectedModel), `读步天下-单书-${book.title.replace(/[<>:"/\\|?*]/g, '_')}.zip`);}
+    catch (reason) {setError(reason instanceof Error ? reason.message : '单书导出失败');}
+    finally {setBackupBusy(false);}
+  };
+  const importBook = async (file?: File) => {
+    if (!file || backupBusy) return;
+    if (!window.confirm('将导入PDF及该书全部学习数据。若相同PDF已存在，将先保存该书安全快照，再替换该书学习数据；其他教材不变。是否继续？')) {
+      if (bookBackupInput.current) bookBackupInput.current.value = '';
+      return;
+    }
+    setBackupBusy(true); setError('');
+    try {
+      const report = await importBookBackup(file, true);
+      if (report.summary_profile_id) {
+        try {
+          const choices = JSON.parse(window.localStorage.getItem('reader-next-summary-models') || '{}');
+          window.localStorage.setItem('reader-next-summary-models', JSON.stringify({...choices, [report.document_id]: report.summary_profile_id}));
+        } catch { /* Imported model remains available in model settings. */ }
+      }
+      window.alert(report.message + (report.safety_backup ? `\n导入前单书快照：${report.safety_backup}` : ''));
+      window.location.reload();
+    } catch (reason) {setError(reason instanceof Error ? reason.message : '单书导入失败');}
+    finally {setBackupBusy(false); if (bookBackupInput.current) bookBackupInput.current.value = '';}
+  };
+
   const exportBackup = async () => {
     if (backupBusy) return;
     setBackupBusy(true); setError('');
@@ -311,15 +344,15 @@ export function App() {
     onCancel={id => void cancelTask(id)} onRetry={id => void retryTask(id)} onView={document => navigateTo('overview', {document})}
     describeTaskError={describeTaskError}/>;
   const mark = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5V5.5C7 3 11.5 1.5 14 3.5C15.5 4.7 14.8 7.5 14.4 9M3.5 20.5C8 17.3 12 18 18 21"/><path d="M6 13.8C11 10 13.5 18.2 19 13.5"/><circle cx="21" cy="11.5" r="1.5"/></svg>;
-  const header = <><header className="guided-header"><div className="guided-leading"><button className="guided-back" aria-label="返回前一个页面" disabled={!navigationStack.length} onClick={goBack}>← 返回</button><button className="guided-brand" onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}><span>{mark}</span><strong>读步天下</strong></button></div><nav aria-label="学习空间"><button aria-current={screen === 'home' || screen === 'overview' ? 'page' : undefined} onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}>学习空间</button><button aria-current={screen === 'memory' ? 'page' : undefined} onClick={openMemory}>学习记忆</button></nav><div className="guided-actions"><button className="guide-open" onClick={() => setGuideOpen(true)}>使用指南</button><details className="global-more"><summary aria-label="更多设置">···</summary><div><button onClick={() => setSettingsOpen(true)}>模型配置</button><button disabled={backupBusy} onClick={() => void exportBackup()}>{backupBusy ? '处理中…' : '完整备份'}</button><button disabled={backupBusy} onClick={() => backupInput.current?.click()}>恢复备份</button><button onClick={() => void exportJsonBackup()}>导出数据 JSON</button></div></details><button className="import-button" onClick={() => fileInput.current?.click()}>＋ 导入教材</button></div><input ref={fileInput} hidden type="file" accept="application/pdf" onChange={event => importPdf(event.target.files?.[0])}/><input ref={backupInput} hidden type="file" accept="application/zip,.zip" onChange={event => void restoreBackup(event.target.files?.[0])}/></header>{taskCenterUi}</>;
+  const header = <><header className="guided-header"><div className="guided-leading"><button className="guided-back" aria-label="返回前一个页面" disabled={!navigationStack.length} onClick={goBack}>← 返回</button><button className="guided-brand" onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}><span>{mark}</span><strong>读步天下</strong></button></div><nav aria-label="学习空间"><button aria-current={screen === 'home' || screen === 'overview' ? 'page' : undefined} onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}>学习空间</button><button aria-current={screen === 'memory' ? 'page' : undefined} onClick={openMemory}>学习记忆</button></nav><div className="guided-actions"><button className="guide-open" onClick={() => setGuideOpen(true)}>使用指南</button><details className="global-more"><summary aria-label="更多设置">···</summary><div><button onClick={() => setSettingsOpen(true)}>模型配置</button><button disabled={backupBusy} onClick={() => bookBackupInput.current?.click()}>导入单书备份</button><button disabled={backupBusy} onClick={() => void exportBackup()}>{backupBusy ? '处理中…' : '完整备份'}</button><button disabled={backupBusy} onClick={() => backupInput.current?.click()}>恢复备份</button><button onClick={() => void exportJsonBackup()}>导出数据 JSON</button></div></details><button className="import-button" onClick={() => fileInput.current?.click()}>＋ 导入教材</button></div><input ref={fileInput} hidden type="file" accept="application/pdf" onChange={event => importPdf(event.target.files?.[0])}/><input ref={bookBackupInput} hidden type="file" accept=".zip,application/zip" aria-label="导入单书完整备份" onChange={event => void importBook(event.target.files?.[0])}/><input ref={backupInput} hidden type="file" accept="application/zip,.zip" onChange={event => void restoreBackup(event.target.files?.[0])}/></header>{taskCenterUi}</>;
 
   const guideUi = guideOpen && <Suspense fallback={<div className="guide-loading" role="status">正在打开使用指南…</div>}><GuideEntry onClose={() => setGuideOpen(false)}/></Suspense>;
   const settingsUi = settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>;
-  if (screen === 'home') return <div className="guided-shell">{guideUi}{header}<GuideLauncher onOpen={() => setGuideOpen(true)}/><LibraryHome activeDocument={activeDocument} currentPage={currentPage} notesCount={notes.length}
+  if (screen === 'home') return <div className="guided-shell">{guideUi}{header}<GuideLauncher onOpen={() => setGuideOpen(true)}/>{error && <div className="error" role="alert">{error}</div>}<LibraryHome activeDocument={activeDocument} currentPage={currentPage} notesCount={notes.length}
     masteredCount={flashcards.filter(card => card.mastered).length} documents={documents} folders={folders}
     selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} enterReader={() => enterReader()}
     onOverview={() => navigateTo('overview', {memoryBookOpen: false, assistantOpen: false})}
-    onImport={() => fileInput.current?.click()} openBook={openBook} renameBook={renameBook} removeBook={removeBook}
+    backupBusy={backupBusy} onExportBook={exportBook} onImportBook={() => bookBackupInput.current?.click()} onImport={() => fileInput.current?.click()} openBook={openBook} renameBook={renameBook} removeBook={removeBook}
     moveBookToFolder={moveBookToFolder} addFolder={addFolder} editFolder={editFolder} removeFolder={removeFolder}/>{settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>}</div>;
 
   if (screen === 'overview' && activeDocument) return <OverviewWorkspace model={overview} activeDocument={activeDocument} currentPage={currentPage} notes={notes} flashcards={flashcards} goBack={goBack} enterReader={enterReader} openMemory={openMemory} header={<>{header}{guideUi}</>} settings={settingsUi}/>;

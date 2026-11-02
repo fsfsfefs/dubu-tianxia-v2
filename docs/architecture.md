@@ -72,3 +72,5 @@ RetrievalService负责模型管理、选择回滚和向量回填/重建；Reposi
 验证环境与浏览器隔离命令见README；压力测试位于test_maintenance_stress.py，浏览器测试使用生成的PDF，不能读取正式.data。
 
 后台调度：索引保留单工作线程，结构总结使用独立3线程池，不同教材并发、同教材互斥。共享SummaryPacer以线程锁原子分配请求起点及限流冷却，不跨await持锁；章节与分块仍按顺序处理。
+
+单书备份见book_backup.py与backup路由：独立ZIP格式，白名单逐表导出该书数据；导入独占HTTP维护租约，拒绝同书在途后台任务，通过SQLite单事务重映射标识、恢复FTS及兼容向量，失败清理新PDF并回滚。相同PDF替换前保存单书快照，其他书不变。

@@ -1,0 +1,27 @@
+import {test,expect} from '@playwright/test';
+test('single-book ZIP restores its notes while leaving another book untouched',async({page},info)=>{
+ const docs=(await (await page.request.get('/api/documents')).json()).documents;
+ const native=docs.find(d=>d.title==='E2E Native'),other=docs.find(d=>d.title==='E2E Scan');
+ const label='单书测试-'+info.project.name;
+ await page.request.post(`/api/documents/${native.id}/notes`,{data:{content:label,title:'备份内笔记'}});
+ const otherBefore=(await (await page.request.get(`/api/documents/${other.id}/notes`)).json()).notes;
+ await page.goto('/');
+ const row=page.locator('.library-book').filter({hasText:'E2E Native'});
+ await row.getByLabel('E2E Native 更多操作').click();
+ const downloading=page.waitForEvent('download');
+ await row.getByRole('button',{name:'导出本书全部数据'}).click();
+ const download=await downloading;
+ expect(download.suggestedFilename()).toMatch(/单书.*\.zip$/);
+ const file=await download.path();
+ await page.request.post(`/api/documents/${native.id}/notes`,{data:{content:'导出后新增-'+label}});
+ page.on('dialog',dialog=>dialog.accept());
+ const restored=page.waitForResponse(r=>r.url().endsWith('/api/backup/book')&&r.request().method()==='POST'&&r.status()!==503);
+ await page.getByLabel('导入单书完整备份').setInputFiles(file);
+ const result=await restored;expect(result.ok()).toBe(true);
+ const report=await result.json();expect(report.replaced).toBe(true);expect(report.safety_backup).toMatch(/pre-book-import/);
+ await expect(page.locator('.library-book').filter({hasText:'E2E Native'})).toBeVisible();
+ const notes=(await (await page.request.get(`/api/documents/${native.id}/notes`)).json()).notes;
+ expect(notes.some(note=>note.content===label)).toBe(true);
+ expect(notes.some(note=>note.content==='导出后新增-'+label)).toBe(false);
+ expect((await (await page.request.get(`/api/documents/${other.id}/notes`)).json()).notes).toEqual(otherBefore);
+});
