@@ -15,6 +15,8 @@ Windows桌面版：desktop.py组合既有API、静态前端与Edge WebView2原�
 
 **后续新增功能前先查本文件，再查看对应实现。已有能力应作为增强或修复处理，避免另建重复入口、数据表或生成链路。功能有变化时同步更新本文件。**
 
+任务中心每条任务均支持删除（包括暂停、排队、运行及已结束）：仅移除任务记录并停止后续处理，保留总结、分块检查点与页面索引；运行中的调用退出前仍保持教材编辑保护。
+
 ## 1. 教材、书架与页面导航
 
 实现：[main.tsx](../apps/web/src/App.tsx)、[main.py](../apps/api/reader_next_api/main.py)、[repository.py](../apps/api/reader_next_api/repository.py)。

@@ -26,6 +26,7 @@ class BackgroundTaskManager:
         self._summary_document_locks: dict[str, threading.Lock] = {}
         self._lock = threading.RLock()
         self._futures: dict[str, Future] = {}
+        self._deleted_documents: dict[str, str] = {}
         self.repository.recover_background_tasks()
 
     def shutdown(self) -> None:
@@ -47,7 +48,8 @@ class BackgroundTaskManager:
                     if self.repository.background_task(task_id).get("document_id") == document_id:
                         return True
                 except LookupError:
-                    continue
+                    if self._deleted_documents.get(task_id) == document_id:
+                        return True
             return False
 
     @contextmanager
@@ -68,10 +70,10 @@ class BackgroundTaskManager:
         )
         if document is None:
             raise LookupError("文档不存在。")
-        task = self.repository.create_background_task(
-            "document-index", document_id, f"索引《{document['title']}》",
-        )
         with self._lock:
+            task = self.repository.create_background_task(
+                "document-index", document_id, f"索引《{document['title']}》",
+            )
             future = self._futures.get(task["id"])
             if future is None or future.done():
                 self._futures[task["id"]] = self.executor.submit(
@@ -123,6 +125,7 @@ class BackgroundTaskManager:
         finally:
             with self._lock:
                 self._futures.pop(task_id, None)
+                self._deleted_documents.pop(task_id, None)
 
     def cancel(self, task_id: str) -> dict:
         task = self.repository.background_task(task_id)
@@ -141,6 +144,22 @@ class BackgroundTaskManager:
         if task["status"] in {"queued", "running", "cancelling"}:
             return task
         return self.enqueue_index(task["document_id"], force=task["status"] == "failed")
+
+    def delete(self, task_id: str) -> None:
+        # Removing the durable record makes worker cancellation checks stop the job.
+        # Keep its book lease until the in-flight call really exits.
+        with self._lock:
+            try:
+                task = self.repository.background_task(task_id)
+            except LookupError:
+                return  # Idempotent if another window already deleted it.
+            future = self._futures.get(task_id)
+            if future is not None and not future.done():
+                self._deleted_documents[task_id] = task["document_id"]
+            self.repository.delete_background_task(task_id)
+            if future is not None and future.cancel():
+                self._futures.pop(task_id, None)
+                self._deleted_documents.pop(task_id, None)
 
     def clear_finished(self) -> int:
         return self.repository.clear_finished_background_tasks()
@@ -205,10 +224,14 @@ class BackgroundTaskManager:
                 result={"indexed_pages": indexed, "reused_pages": reused, "blank_pages": blank},
             )
         except Exception as error:
-            self.repository.update_background_task(
-                task_id, status="failed", message="后台索引失败",
-                error=str(error)[:1000],
-            )
+            try:
+                self.repository.update_background_task(
+                    task_id, status="failed", message="后台索引失败",
+                    error=str(error)[:1000],
+                )
+            except LookupError:
+                pass  # The user deleted this job while it was processing a page.
         finally:
             with self._lock:
                 self._futures.pop(task_id, None)
+                self._deleted_documents.pop(task_id, None)

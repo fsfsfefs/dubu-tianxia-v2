@@ -130,3 +130,85 @@ def test_paused_book_retry_waits_for_inflight_summary(tmp_path, monkeypatch):
     finally:
         release.set()
         manager.shutdown()
+
+
+def test_delete_running_summary_keeps_book_lease_and_does_not_resurrect(tmp_path, monkeypatch):
+    import threading
+    import pytest
+    from reader_next_api import background_tasks
+
+    repo = Repository(tmp_path)
+    doc = repo.add_document("book.pdf", pdf_bytes())
+    repo.save_summary_checkpoint(doc["id"], "saved", "已完成分块")
+    entered, release = threading.Event(), threading.Event()
+
+    async def blocked(repo, task_id, *args):
+        entered.set()
+        assert release.wait(10)
+        repo.background_task(task_id)  # Same cancellation check as the real summary pipeline.
+
+    monkeypatch.setattr(background_tasks, "run_summary", blocked)
+    manager = BackgroundTaskManager(repo)
+    try:
+        task = manager.enqueue_summary(doc["id"], {"chapter_index": None})
+        assert entered.wait(5)
+        future = manager._futures[task["id"]]
+        manager.pause(task["id"])
+        manager.delete(task["id"])
+        manager.delete(task["id"])
+        assert not manager.list()
+        assert manager.book_busy(doc["id"])
+        with pytest.raises(RuntimeError):
+            with manager.edit_book(doc["id"]):
+                pass
+        release.set()
+        future.result(5)
+        assert not manager.book_busy(doc["id"])
+        assert not manager.list()
+        assert repo.summary_checkpoint(doc["id"], "saved") == "已完成分块"
+    finally:
+        release.set()
+        manager.shutdown()
+
+
+def test_delete_running_and_queued_index_retains_pages(tmp_path, monkeypatch):
+    import threading
+    from reader_next_api import background_tasks
+
+    repo = Repository(tmp_path)
+    docs = [repo.add_document(f"book-{i}.pdf", pdf_bytes(i + 1)) for i in range(2)]
+    entered, release = threading.Event(), threading.Event()
+    opened = []
+
+    class Page:
+        def extract_text(self):
+            entered.set()
+            assert release.wait(10)
+            return "已提取原文"
+
+    def reader(path):
+        opened.append(path)
+        return type("PDF", (), {"pages": [Page(), Page()]})()
+
+    monkeypatch.setattr(background_tasks, "PdfReader", reader)
+    manager = BackgroundTaskManager(repo)
+    try:
+        first = manager.enqueue_index(docs[0]["id"])
+        assert entered.wait(5)
+        future = manager._futures[first["id"]]
+        queued = manager.enqueue_index(docs[1]["id"])
+        queued_future = manager._futures[queued["id"]]
+        manager.delete(queued["id"])
+        assert queued_future.cancelled()
+        assert not manager.book_busy(docs[1]["id"])
+        manager.delete(first["id"])
+        assert manager.book_busy(docs[0]["id"])
+        release.set()
+        future.result(5)  # Missing task during progress/error reporting is handled.
+        assert not manager.list()
+        assert len(opened) == 1
+        assert repo.list_ocr_pages(docs[0]["id"])[0]["text"] == "已提取原文"
+        assert not manager.book_busy(docs[0]["id"])
+    finally:
+        release.set()
+        manager.shutdown()

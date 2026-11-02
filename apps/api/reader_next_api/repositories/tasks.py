@@ -106,6 +106,10 @@ class TasksRepository:
             )
 
 
+    def delete_background_task(self, task_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM background_tasks WHERE id = ?", (task_id,))
+
     def clear_finished_background_tasks(self) -> int:
         with self.connect() as connection:
             cursor = connection.execute(

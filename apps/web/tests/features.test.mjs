@@ -17,7 +17,7 @@ const book = {id:'book', title:'教材', byte_size:10, folder_id:null, created_a
 function props(task) {
   return {taskCenterOpen:true, activeTaskCount:1, activeDocument:book, documents:[book], backgroundTasks:[task], preparing:false,
     chapterSummaryProgress:'', onToggle(){}, onClose(){}, onCancelPrepare(){}, onIndex(){}, onClear(){},
-    onPause(){}, onCancel(){}, onRetry(){}, onView(){}, describeTaskError: message => message};
+    onDelete(){}, onPause(){}, onCancel(){}, onRetry(){}, onView(){}, describeTaskError: message => message};
 }
 function task(status) {
   return {id:'task',task_type:'structure-summary',document_id:'book',title:'生成总结',status, progress:1,total:2,
@@ -87,4 +87,18 @@ test('a note request resolving after switching books cannot append into the new 
     await act(async()=>{resolve({ok:true,json:async()=>({note:{id:'n',document_id:'book',content:'A'}})});await request;});
     assert.equal(hook.result.current.notes.length,0);
   } finally {globalThis.fetch=previous;}
+});
+
+
+test('each summary and indexing task can be deleted in every status', () => {
+  for (const type of ['structure-summary','document-index']) {
+    for (const status of ['queued','running','cancelling','paused','completed','partial','failed','cancelled']) {
+      let deleted='';
+      const item={...task(status),task_type:type};
+      const ui=render(React.createElement(TaskCenter,{...props(item),onDelete:id=>deleted=id}));
+      fireEvent.click(ui.getByRole('button',{name:'删除',exact:true}));
+      assert.equal(deleted,item.id,`${type}/${status}`);
+      cleanup();
+    }
+  }
 });

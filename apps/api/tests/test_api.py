@@ -69,3 +69,19 @@ def test_highlight_input_accepts_smooth_ink_colors_and_points():
 
     assert HighlightInput(page_number=1, text="黑色笔迹", rects=points, color="black").color == "black"
     assert HighlightInput(page_number=1, text="红色笔迹", rects=points, color="red").color == "red"
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "cancelling", "paused", "completed", "partial", "failed", "cancelled"])
+def test_delete_individual_task_in_every_state(client, status):
+    repo = client.app.state.runtime.repository
+    doc = repo.add_document("book.pdf", b"%PDF-1.7 fixture")
+    repo.save_ocr_page(doc["id"], 1, "已保存索引")
+    task = repo.create_background_task("document-index", doc["id"], "索引")
+    repo.update_background_task(task["id"], status=status)
+    other = repo.create_background_task("structure-summary", doc["id"], "总结")
+    url = f"/api/tasks/{task['id']}"
+    assert client.delete(url).json() == {"deleted": True}
+    assert client.delete(url).status_code == 200
+    assert [item["id"] for item in client.get("/api/tasks").json()["tasks"]] == [other["id"]]
+    assert repo.list_ocr_pages(doc["id"])[0]["text"] == "已保存索引"
+    assert repo.document_path(doc["id"]).exists()

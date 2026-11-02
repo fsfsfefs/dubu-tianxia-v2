@@ -70,4 +70,9 @@ def create_router(runtime: Runtime) -> APIRouter:
     def clear_finished_background_tasks() -> dict:
         return {'deleted': runtime.task_manager.clear_finished()}
 
+    @router.delete('/api/tasks/{task_id}')
+    def delete_background_task(task_id: str) -> dict:
+        runtime.task_manager.delete(task_id)
+        return {'deleted': True}
+
     return router

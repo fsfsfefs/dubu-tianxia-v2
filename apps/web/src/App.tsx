@@ -27,7 +27,7 @@ import {
   createFolder, deleteDocument, deleteFolder, DocumentRecord, exportAllData, FolderRecord, listDocuments, listFolders, listProfiles, ModelProfile, moveDocument, renameDocument, renameFolder,
   uploadDocument, } from './api';
 import {downloadBookBackup, importBookBackup, downloadFullBackup, restoreFullBackup} from './api';
-import {BackgroundTask, cancelBackgroundTask, clearFinishedBackgroundTasks, createIndexTasks, listBackgroundTasks, retryBackgroundTask} from './api';
+import {BackgroundTask, deleteBackgroundTask, cancelBackgroundTask, clearFinishedBackgroundTasks, createIndexTasks, listBackgroundTasks, retryBackgroundTask} from './api';
 import './styles/foundation.css';
 import './styles/workspace.css';
 import './styles/library.css';
@@ -331,6 +331,10 @@ export function App() {
     try { await cancelBackgroundTask(taskId); await refreshTasksNow(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '取消任务失败'); }
   };
+  const deleteTask = async (taskId: string) => {
+    try { await deleteBackgroundTask(taskId); await refreshTasksNow(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '删除任务失败'); }
+  };
   const retryTask = async (taskId: string) => {
     try { await retryBackgroundTask(taskId); await refreshTasksNow(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '重新执行任务失败'); }
@@ -346,7 +350,7 @@ export function App() {
     onToggle={() => setTaskCenterOpen(value => !value)} onClose={() => setTaskCenterOpen(false)}
     onCancelPrepare={() => void cancelBookStructure()} onIndex={ids => void queueIndexes(ids)} onClear={() => void clearFinishedTasks()}
     onPause={id => void pauseSummaryTask(id).then(refreshTasksNow).catch(reason => setError(reason.message))}
-    onCancel={id => void cancelTask(id)} onRetry={id => void retryTask(id)} onView={document => navigateTo('overview', {document})}
+    onDelete={id => void deleteTask(id)} onCancel={id => void cancelTask(id)} onRetry={id => void retryTask(id)} onView={document => navigateTo('overview', {document})}
     describeTaskError={describeTaskError}/>;
   const mark = <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5V5.5C7 3 11.5 1.5 14 3.5C15.5 4.7 14.8 7.5 14.4 9M3.5 20.5C8 17.3 12 18 18 21"/><path d="M6 13.8C11 10 13.5 18.2 19 13.5"/><circle cx="21" cy="11.5" r="1.5"/></svg>;
   const header = <><header className="guided-header"><div className="guided-leading"><button className="guided-back" aria-label="返回前一个页面" disabled={!navigationStack.length} onClick={goBack}>← 返回</button><button className="guided-brand" onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}><span>{mark}</span><strong>读步天下</strong></button></div><nav aria-label="学习空间"><button aria-current={screen === 'home' || screen === 'overview' ? 'page' : undefined} onClick={() => navigateTo('home', {memoryBookOpen: false, assistantOpen: false})}>学习空间</button><button aria-current={screen === 'memory' ? 'page' : undefined} onClick={openMemory}>学习记忆</button></nav><div className="guided-actions"><button className="guide-open" onClick={() => setGuideOpen(true)}>使用指南</button><details className="global-more"><summary aria-label="更多设置">···</summary><div><button onClick={() => setSettingsOpen(true)}>模型配置</button><button disabled={backupBusy} onClick={() => bookBackupInput.current?.click()}>导入单书备份</button><button disabled={backupBusy} onClick={() => void exportBackup()}>{backupBusy ? '处理中…' : '完整备份'}</button><button disabled={backupBusy} onClick={() => backupInput.current?.click()}>恢复备份</button><button onClick={() => void exportJsonBackup()}>导出数据 JSON</button></div></details><button className="import-button" onClick={() => fileInput.current?.click()}>＋ 导入教材</button></div><input ref={fileInput} hidden type="file" accept="application/pdf" onChange={event => importPdf(event.target.files?.[0])}/><input ref={bookBackupInput} hidden type="file" accept=".zip,application/zip" aria-label="导入单书完整备份" onChange={event => void importBook(event.target.files?.[0])}/><input ref={backupInput} hidden type="file" accept="application/zip,.zip" onChange={event => void restoreBackup(event.target.files?.[0])}/></header>{taskCenterUi}</>;

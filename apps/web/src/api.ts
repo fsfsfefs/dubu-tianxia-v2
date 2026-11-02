@@ -428,6 +428,10 @@ export async function retryBackgroundTask(taskId: string): Promise<BackgroundTas
   return (await json<{task: BackgroundTask}>(await fetch(`/api/tasks/${taskId}/retry`, {method: 'POST'}))).task;
 }
 
+export async function deleteBackgroundTask(taskId: string): Promise<void> {
+  await json(await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {method: 'DELETE'}));
+}
+
 export async function clearFinishedBackgroundTasks(): Promise<number> {
   return (await json<{deleted: number}>(await fetch('/api/tasks/finished', {method: 'DELETE'}))).deleted;
 }
