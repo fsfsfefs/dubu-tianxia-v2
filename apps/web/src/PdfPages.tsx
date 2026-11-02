@@ -173,6 +173,8 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
     const container = textLayerRef.current;
     setRendering(true);
     container.replaceChildren();
+    let pageTextLayer: TextLayer | undefined;
+    let pageRender: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']> | undefined;
     pdf.getPage(pageNumber).then(async page => {
       if (currentRender !== renderId.current) return;
       const baseViewport = page.getViewport({scale: 1});
@@ -188,14 +190,15 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       container.style.setProperty('--total-scale-factor', `${viewport.scale}`);
       const context = canvas.getContext('2d');
       if (!context) throw new Error('浏览器无法创建画布。');
-      await page.render({canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0]}).promise;
+      pageRender=page.render({canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0]});
+      await pageRender.promise;
       if (currentRender !== renderId.current) return;
       const textContent = await page.getTextContent();
       if (currentRender !== renderId.current) return;
       const nativeText = textContent.items.map(item => 'str' in item ? item.str : '').join(' ').trim();
       if (nativeText.replace(/\s/g, '').length >= 8) {
-        const textLayer = new TextLayer({textContentSource: textContent, container, viewport});
-        await textLayer.render();
+        pageTextLayer = new TextLayer({textContentSource: textContent, container, viewport});
+        await pageTextLayer.render();
         if (currentRender !== renderId.current) return;
         pageTextCache.current.set(pageNumber, nativeText);
         void saveOcrPage(documentId, pageNumber, nativeText).catch(() => undefined);
@@ -233,7 +236,7 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
           setRendering(false);
         }
       });
-    return () => { renderId.current += 1; };
+    return () => { renderId.current += 1; pageRender?.cancel(); pageTextLayer?.cancel(); };
   }, [active, documentId, ocrCache, onError, onOcrProgress, onTextReady, pageNumber, pageTextCache, pdf, zoom]);
 
   const pageRegion = region?.page === pageNumber ? region.rect : null;

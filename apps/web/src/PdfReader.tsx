@@ -1,3 +1,4 @@
+import {useReaderZoom,pageContentTop} from './features/reader/useReaderZoom';
 import {buildInkMarks} from './features/reader/inkMarks';
 import {InkMarkPanel} from './features/reader/InkMarkPanel';
 import {StickyNoteEditor,NoteImages} from './features/notes/StickyNoteEditor';
@@ -51,6 +52,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [copied, setCopied] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pagesRef=useRef<HTMLDivElement>(null),zoomStatusRef=useRef<HTMLOutputElement>(null);
   const thumbnailListRef = useRef<HTMLDivElement>(null);
   const currentPageRef = useRef(pageNumber);
   const currentZoomRef = useRef(zoom);
@@ -87,6 +89,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     if (positionSaveTimer.current !== null) window.clearTimeout(positionSaveTimer.current);
     positionSaveTimer.current = window.setTimeout(flushReadingPosition, 450);
   }, [flushReadingPosition]);
+
+  const {wheelDirect,setWheelDirect,changeZoom,cancelZoom}=useReaderZoom({documentId:document.id,enabled:!!pdf,zoom,setZoom,root:scrollRef,stage:pagesRef,status:zoomStatusRef,touchWrites:!!annotationTool && !penOnly,regionMode,onTouchGesture:()=>{setSelection(null);setRegion(null);dragStart.current=null;dragPage.current=null;}});
 
   useAutoDismiss(error, () => setError(''));
 
@@ -177,7 +181,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     setPageNumber(requestedPage);
     window.requestAnimationFrame(() => {
       const root=scrollRef.current,target=root?.querySelector<HTMLElement>(`[data-page-number="${requestedPage}"]`);
-      if(root && target)root.scrollTo({top:target.offsetTop,behavior:'auto'});
+      if(root && target)root.scrollTo({top:pageContentTop(root,target),behavior:'auto'});
     });
     // targetPage mirrors ordinary scrolling, while targetPageRevision changes
     // only for an explicit external navigation request. Keeping targetPage out
@@ -203,7 +207,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         const page = scroller.querySelector<HTMLElement>(`[data-page-number="${pending.pageNumber}"]`);
         if (!page) return;
         const focusOffset = Math.min(scroller.clientHeight * .42, 360);
-        scroller.scrollTop = Math.max(0, page.offsetTop + (pending.alignStart ? 0 : pending.pageOffset * page.offsetHeight - focusOffset));
+        scroller.scrollTop = Math.max(0, pageContentTop(scroller,page) + (pending.alignStart ? 0 : pending.pageOffset * page.offsetHeight - focusOffset));
         readingPositionRef.current = pending;
         pendingRestoreRef.current = null;
         readyFrame = window.requestAnimationFrame(() => { positionReadyRef.current = true; });
@@ -254,12 +258,13 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   };
 
   const changePage = (next: number) => {
+    cancelZoom();
     const bounded = Math.max(1, Math.min(pdf?.numPages || 1, next));
     if(pendingRestoreRef.current)pendingRestoreRef.current={pageNumber:bounded,pageOffset:0,alignStart:true};
     queueReadingPosition(bounded, 0);
     setPageNumber(bounded);
     const root=scrollRef.current,target=root?.querySelector<HTMLElement>(`[data-page-number="${bounded}"]`);
-    if(root && target)root.scrollTo({top:target.offsetTop,behavior:'auto'});
+    if(root && target)root.scrollTo({top:pageContentTop(root,target),behavior:'auto'});
   };
 
   const trackVisiblePage = () => {
@@ -267,7 +272,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     scrollFrame.current = window.requestAnimationFrame(() => {
       scrollFrame.current = null;
       const scroller = scrollRef.current;
-      if (!scroller) return;
+      if (!scroller || scroller.dataset.zoomPreview==='true') return;
       const rootBounds = scroller.getBoundingClientRect();
       // A stable reading line avoids two adjacent pages alternately becoming
       // the "largest visible" page while the user rests at their boundary.
@@ -373,7 +378,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   };
 
 
-  return <div className={`pdf-reader original-reader ${toolbarCollapsed?'toolbar-is-collapsed':''} ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
+  return <div data-zoom={zoom.toFixed(3)} className={`pdf-reader original-reader ${toolbarCollapsed?'toolbar-is-collapsed':''} ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
     {outlineEditorOpen && <OutlineEditor documentId={document.id} onClose={()=>setOutlineEditorOpen(false)} onSaved={setOutline}/>}
     <div ref={toolbarRef} className="reader-toolbar original-toolbar">
       <div className="reader-book-heading">
@@ -402,8 +407,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         {onAssistantToggle && <button className={assistantOpen ? 'active' : ''} aria-expanded={assistantOpen} onClick={onAssistantToggle}><span className="tool-icon assistant-icon" aria-hidden="true">◇</span><span>{assistantOpen ? '收起助读' : 'AI助读'}</span></button>}
         {onOpenGuide && <button aria-label="使用指南" title="使用指南" onClick={onOpenGuide}><span className="tool-icon" aria-hidden="true">?</span></button>}
         <details className="reader-more" open={displayOpen} onToggle={event => setDisplayOpen(event.currentTarget.open)}><summary title="更多阅读工具">···</summary><div>
-          <button onClick={() => setZoom(value => Math.max(.5, +(value - .1).toFixed(1)))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(value => Math.min(3, +(value + .1).toFixed(1)))}>＋</button>
-          <button onClick={() => setZoom(1)}>适应宽度</button><label><input type="checkbox" checked={paperTone} onChange={event => setPaperTone(event.target.checked)}/>柔和纸色</label>
+          <button onClick={() => changeZoom(zoom-.1)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom+.1)}>＋</button>
+          <button onClick={() => changeZoom(1)}>适应宽度</button><label><input type="checkbox" checked={wheelDirect} onChange={event=>setWheelDirect(event.target.checked)}/>滚轮直接缩放</label><small className="zoom-gesture-help">Ctrl＋滚轮 / 双指缩放</small><label><input type="checkbox" checked={paperTone} onChange={event => setPaperTone(event.target.checked)}/>柔和纸色</label>
         </div></details>
       </div>
     </div>
@@ -459,11 +464,12 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     <div
       ref={scrollRef}
       className="pdf-scroll"
-      title="上下滚动连续阅读 PDF"
+      title="滚动阅读；Ctrl＋滚轮或双指缩放（50%—300%）"
       onScroll={trackVisiblePage}
     >
       {error && <div className="pdf-status error">{error}</div>}
       {loading && <div className="pdf-status">正在载入 PDF…</div>}
+      <div className="pdf-pages" ref={pagesRef}>
       {pdf && Array.from({length: pdf.numPages}, (_, index) => {
         const continuousPage = index + 1;
         return <ContinuousPdfPage
@@ -498,7 +504,9 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         />;
       })}
       {tailSpace > 0 && <div aria-hidden="true" style={{height: tailSpace, flexShrink: 0}}/>}
+      </div>
     </div>
+    <output ref={zoomStatusRef} className="reader-zoom-status" aria-label="PDF缩放状态" aria-live="polite"/>
     {selection && <div className="selection-actions"><span>已选择 {selection.text.length} 字</span><button onClick={() => void copySelection()}>{copied ? '已复制' : '复制'}</button><details><summary>AI 研读</summary><div className="selection-ai-menu"><button onClick={() => onAiAssist?.(selection.text, 'explain')}>解释概念</button><button onClick={() => onAiAssist?.(selection.text, 'summary')}>提炼要点</button><button onClick={() => onAiAssist?.(selection.text, 'questions')}>生成问题</button><button onClick={() => onAiAssist?.(selection.text, 'connect')}>联系全书</button></div></details><button className="accent" onClick={saveHighlight}>高亮</button><button onClick={() => setSelection(null)}>×</button></div>}
   </div>;
 }

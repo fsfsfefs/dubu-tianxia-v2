@@ -42,6 +42,13 @@ export function AnnotationLayer(props: Props) {
   };
   useEffect(() => () => {cancel(); cursorRef.current = null; setCursor(null);}, [documentId, page, tool, zoom, dimensions.width, dimensions.height, eraserSize, penOnly, surface]);
 
+  useEffect(()=>{
+    const root=svg.current?.closest('.pdf-scroll');
+    const cancelTouch=()=>{if(gesture.current?.pointerType==='touch')cancel();};
+    root?.addEventListener('reader-touch-gesture',cancelTouch);
+    return()=>root?.removeEventListener('reader-touch-gesture',cancelTouch);
+  },[documentId,page,tool]);
+
   const pointAt = (event: {clientX: number; clientY: number}): AnnotationPoint => {
     const box = svg.current!.getBoundingClientRect();
     return {x: Math.max(0, Math.min(1, (event.clientX - box.left) / Math.max(1, box.width))), y: Math.max(0, Math.min(1, (event.clientY - box.top) / Math.max(1, box.height)))};

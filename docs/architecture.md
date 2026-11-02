@@ -97,3 +97,10 @@ features/outline/OutlineEditor提供模型选择、原文/OCR准备进度与取�
 inkMarks.ts将显式__ink_region:标签笔迹按稳定身份分组，未命名的历史笔迹按同页同侧邻近边界计算区域，只读识别不改写历史；新笔画优先加入当前邻近区域，“新建标记”明确生成独立身份。区域名保存在组内highlight.text，原comment、颜色、几何及其他标签保留。PUT/DELETE ink-marks在事务内核验全部成员归属后命名或删除，防止跨书/跨页/跨侧和误操作文字高亮。useAnnotations共用笔迹队列，擦除替代片段、旧撤销条目与整组删除撤销均保留区域身份和名称，备份沿用highlights无需迁移表结构。
 
 PdfReader记忆reader-next-toolbar-collapsed，隐藏主要工具组及标注浮栏而保留翻页/展开/结束绘制，工具状态保持；现有Toolbar ResizeObserver使侧栏和弹出面板随折叠高度同步定位。InkMarkPanel使用独立key避免与章节总结面板重名。
+
+
+## 阅读器滚轮与触屏缩放（2026-11-02）
+
+useReaderZoom使用非被动wheel和捕获阶段Pointer Events处理Ctrl滚轮/可选直接滚轮、单指拖动及双指缩放。两指启动时通过局部reader-touch-gesture事件取消AnnotationLayer的在途触摸笔画，手写笔接触期间不接受触摸缩放；不依赖仅移动端才有的Touch Events。拖动与绘制按当前工具及penOnly区分，剩余单指在捏合结束后须抬起才能开始下一手势，避免串为笔迹。
+
+pdf-pages包装器负责临时CSS变换，结束后一次提交zoom并在useLayoutEffect中按页内归一化位置补偿scrollTop/scrollLeft；预览时不写入临时阅读位置。容器宽度至少填满视口且可按页面自然宽度增长，避免居中溢出后左侧不可达。pageContentTop统一计算页面在滚动区的坐标，不依赖新包装层offsetParent。ContinuousPdfPage清理旧RenderTask和TextLayer以防快速缩放复用同一canvas，缩放继续通过已有reading_positions保存，无新后端接口。

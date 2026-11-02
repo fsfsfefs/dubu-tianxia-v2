@@ -5,6 +5,8 @@ async function openBook(page,title){
  await page.locator('.library-book').filter({hasText:title}).getByRole('button',{name:/打开教材/}).click();
  await page.getByRole('button',{name:/继续 PDF/}).click();
  await expect(page.locator('.continuous-page canvas').first()).toBeVisible();
+ await page.locator('.reader-more > summary').click();await page.getByRole('button',{name:'适应宽度',exact:true}).click();await page.locator('.reader-more > summary').click();
+ await expect(page.locator('.pdf-reader')).toHaveAttribute('data-zoom','1.000');
  // Each scenario starts on an explicit page, independently of another project's saved reading position.
  await page.locator('.page-controls input').fill('1');
  await page.locator('.page-controls input').press('Enter');

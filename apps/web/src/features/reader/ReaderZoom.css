@@ -1,0 +1,5 @@
+.original-reader .pdf-scroll{display:block;touch-action:none}
+.pdf-pages{position:relative;display:flex;flex-direction:column;align-items:center;gap:24px;min-width:100%;width:max-content;transform-origin:0 0}
+.reader-zoom-status{position:absolute;right:20px;bottom:20px;z-index:16;padding:8px 13px;border-radius:8px;background:#304b3be8;color:#fff;pointer-events:none;opacity:0;transition:opacity .15s;font:600 15px/1.3 system-ui,sans-serif}
+.reader-zoom-status[data-visible=true]{opacity:1}
+.reader-more .zoom-gesture-help{font-size:11px;color:#74816f;white-space:nowrap}

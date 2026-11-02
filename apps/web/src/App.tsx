@@ -1,3 +1,4 @@
+import './features/reader/ReaderZoom.css';
 import './features/reader/InkMarks.css';
 import './features/notes/StickyNotes.css';
 import './features/outline/OutlineEditor.css';
