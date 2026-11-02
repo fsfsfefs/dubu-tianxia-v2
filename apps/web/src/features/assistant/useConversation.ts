@@ -33,8 +33,8 @@ export function useConversation(options: Options, dependencies: Dependencies = d
   const addImages = async (files: File[]) => {
     if (busy || imageRead.current) return;
     if (files.length + images.length > 4) {setError('最多附加4张图片。'); return;}
-    if (files.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || !file.size || file.size > 3 * 1024 * 1024)) {
-      setError('请选择PNG、JPEG或WebP图片，每张不超过3MB。'); return;
+    if (files.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || !file.size || file.size > 20 * 1024 * 1024)) {
+      setError('请选择PNG、JPEG或WebP图片，每张不超过20MB。'); return;
     }
     const valid = capture();
     const token = {};

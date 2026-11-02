@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from reader_next_api.schemas import ChatInput
+from reader_next_api.schemas import ChatInput, MAX_CHAT_IMAGE_BYTES, MAX_CHAT_IMAGE_BASE64_LENGTH
 from reader_next_api.domain import ModelProfile
 from reader_next_api.providers import OpenAICompatibleProvider
 from reader_next_api.routes.chat import create_router
@@ -34,7 +34,7 @@ def test_image_count_size_and_pixel_limits():
     with pytest.raises(ValidationError):
         ChatInput(profile_id="model", question="image", images=[image_url()] * 5)
     with pytest.raises(ValidationError):
-        ChatInput(profile_id="model", question="image", images=["data:image/png;base64," + "A" * (4 * 1024 * 1024 + 4)])
+        ChatInput(profile_id="model", question="image", images=["data:image/png;base64," + "A" * (MAX_CHAT_IMAGE_BASE64_LENGTH + 4)])
     buffer = BytesIO()
     Image.new("1", (5000, 5000)).save(buffer, format="PNG")
     with pytest.raises(ValidationError):
@@ -125,3 +125,20 @@ def test_image_question_drives_rag_and_reaches_answer_and_deep_planner(deep):
     assert "教材甲" in answers[0]["rag_context"]
     assert "不核验附图本身" in result.text
     assert len(calls) + len(answers) <= (4 if deep else 3)
+
+
+@pytest.mark.parametrize("size", [3 * 1024 * 1024 + 1, MAX_CHAT_IMAGE_BYTES])
+def test_chat_image_accepts_larger_files_up_to_twenty_mb(size):
+    data = base64.b64decode(image_url().split(",", 1)[1])
+    data += b"\0" * (size - len(data))
+    url = "data:image/png;base64," + base64.b64encode(data).decode()
+    assert ChatInput(profile_id="model", question="image", images=[url]).images == [url]
+
+
+def test_chat_image_rejects_twenty_mb_plus_one_even_with_same_base64_length():
+    data = base64.b64decode(image_url().split(",", 1)[1])
+    data += b"\0" * (MAX_CHAT_IMAGE_BYTES + 1 - len(data))
+    encoded = base64.b64encode(data).decode()
+    assert len(encoded) == MAX_CHAT_IMAGE_BASE64_LENGTH
+    with pytest.raises(ValidationError):
+        ChatInput(profile_id="model", question="image", images=["data:image/png;base64," + encoded])

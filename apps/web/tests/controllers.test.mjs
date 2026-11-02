@@ -211,7 +211,7 @@ test('image upload validates count, type and size before reading',async()=>{
  const hook=renderHook(()=>useChat(book,{ensureIndex(){},async stream(){}},{setError:message=>errors.push(message)}));
  for(const files of [
   [new window.File(['svg'],'test.svg',{type:'image/svg+xml'})],
-  [new window.File([new Uint8Array(3*1024*1024+1)],'big.png',{type:'image/png'})],
+  [new window.File([new Uint8Array(20*1024*1024+1)],'big.png',{type:'image/png'})],
   Array.from({length:5},()=>new window.File(['a'],'test.png',{type:'image/png'}))
  ]) await act(async()=>{await hook.result.current.addImages(files);});
  assert.equal(errors.length,3);
@@ -244,4 +244,15 @@ test('full-book and multi-book deep questions send images alongside retrieval fl
   assert.deepEqual(indexed,sent.document_ids);
   hook.unmount();
  }
+});
+
+
+test('chat image upload accepts files above 3MB through the 20MB boundary',async()=>{
+ const errors=[];
+ const hook=renderHook(()=>useChat(book,{ensureIndex(){},async stream(){}},{setError:message=>{if(message)errors.push(message);}}));
+ for(const size of [3*1024*1024+1,20*1024*1024]){
+  await act(async()=>{await hook.result.current.addImages([new window.File([new Uint8Array(size)],'large.png',{type:'image/png'})]);});
+ }
+ assert.equal(hook.result.current.images.length,2);
+ assert.equal(errors.length,0);
 });

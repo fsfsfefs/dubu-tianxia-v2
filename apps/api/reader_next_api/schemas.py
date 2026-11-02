@@ -4,6 +4,9 @@ import base64
 from io import BytesIO
 from PIL import Image
 
+MAX_CHAT_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_CHAT_IMAGE_BASE64_LENGTH = 4 * ((MAX_CHAT_IMAGE_BYTES + 2) // 3)
+
 class ProfileInput(BaseModel):
     id: str | None = None
     name: str = Field(min_length=1, max_length=80)
@@ -49,11 +52,11 @@ class ChatInput(BaseModel):
         for value in values:
             header, separator, encoded = value.partition(",")
             mime = header.removeprefix("data:").removesuffix(";base64")
-            if not separator or header != f"data:{mime};base64" or mime not in formats or len(encoded) > 4 * 1024 * 1024:
-                raise ValueError("图片仅支持PNG/JPEG/WebP，每张不超过3MB。")
+            if not separator or header != f"data:{mime};base64" or mime not in formats or len(encoded) > MAX_CHAT_IMAGE_BASE64_LENGTH:
+                raise ValueError("图片仅支持PNG/JPEG/WebP，每张不超过20MB。")
             try:
                 data = base64.b64decode(encoded, validate=True)
-                if not data or len(data) > 3 * 1024 * 1024:
+                if not data or len(data) > MAX_CHAT_IMAGE_BYTES:
                     raise ValueError("image too large")
                 with Image.open(BytesIO(data)) as image:
                     if image.format != formats[mime] or image.width * image.height > 20_000_000:
