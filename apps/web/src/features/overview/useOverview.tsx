@@ -36,6 +36,7 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
         ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
     } catch { return {}; }
   });
+  const pageReferenceReturn = useRef<{summaryKey: string; index: number} | null>(null);
   const capture = useDocumentScope(activeDocument?.id);
   const outlineEpoch = useRef(0), traceEpoch = useRef(0);
   const importing = useRef<object | null>(null);
@@ -64,7 +65,7 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
   const bookGenerationTask = useRef<BookGenerationTask | null>(null);
 
   useEffect(() => {
-    importing.current = null; outlineEpoch.current++; traceEpoch.current++;
+    pageReferenceReturn.current = null; importing.current = null; outlineEpoch.current++; traceEpoch.current++;
     setChapters([]); setChaptersLoading(false); setSelectedChapterIndex(-1); setChapterSummaries([]); setSummaryGaps([]);
     setChapterSummaryBusy(''); setChapterSummaryProgress(''); setChapterSummaryError(''); setStructureImportStatus('');
     setBookGenerationState('idle'); setGenerationScope(null); setGenerationTargetKey('');
@@ -127,7 +128,8 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
           if (valid()) {setChapterSummaries(result.summaries); setSummaryGaps(result.gaps);}
         }).catch(reason => {if (valid()) setError(reason.message);});
         const readingChapter = items.reduce((matched, chapter, index) => chapter.page <= currentPage ? index : matched, -1);
-        setSelectedChapterIndex(readingChapter >= 0 ? readingChapter : items.length ? 0 : -1);
+        const returnedChapter = returnedSummarySelection ? items.findIndex((_, i) => chapterKey(activeDocument.id, items, i) === returnedSummarySelection.summaryKey) : -1;
+        setSelectedChapterIndex(returnedChapter >= 0 ? returnedChapter : readingChapter >= 0 ? readingChapter : items.length ? 0 : -1);
       })
       .catch(reason => { if (valid()) setError(reason instanceof Error ? reason.message : '章节目录加载失败'); })
       .finally(() => { if (valid()) setChaptersLoading(false); });
@@ -135,10 +137,17 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
   }, [activeDocument?.id, screen]);
 
   useEffect(() => {
-    if (screen !== 'overview' || !returnedSummarySelection) return;
-    const timer = window.setTimeout(() => document.querySelector<HTMLElement>('[data-summary-return="true"]')?.scrollIntoView({behavior: 'smooth', block: 'center'}), 80);
+    if (screen !== 'overview' || !returnedSummarySelection || chaptersLoading) return;
+    const timer = window.setTimeout(() => {
+      const saved = pageReferenceReturn.current;
+      const root = saved ? Array.from(document.querySelectorAll<HTMLElement>('[data-summary-key]')).find(node => node.dataset.summaryKey === saved.summaryKey) : undefined;
+      const anchor = saved && root ? root.querySelectorAll<HTMLButtonElement>('.summary-page-link')[saved.index] : null;
+      const target = anchor || document.querySelector<HTMLElement>('[data-summary-return="true"]');
+      target?.scrollIntoView({block: 'center'});
+      anchor?.focus({preventScroll: true});
+    }, 80);
     return () => window.clearTimeout(timer);
-  }, [returnedSummarySelection, screen, selectedChapterIndex]);
+  }, [returnedSummarySelection, screen, selectedChapterIndex, chaptersLoading]);
 
   const importGapSummary = async (file?: File) => {
     const target = gapImportTarget.current;
@@ -233,6 +242,7 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
   };
   const openTraceLocation = (index: number) => {
     if (!activeDocument || !summarySelection || !traceLocations[index]) return;
+    pageReferenceReturn.current = null;
     setSourceTrace({query: summarySelection.text, summaryKey: summarySelection.summary.chapter_key, locations: traceLocations, index});
     window.getSelection()?.removeAllRanges();
     setSummarySelection(null); setTraceLocations([]); setTraceError('');
@@ -248,7 +258,14 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
   };
   const renderSummaryText = (value: string | undefined, summaryKey: string) => {
     const highlight = returnedSummarySelection?.summaryKey === summaryKey ? returnedSummarySelection.text : undefined;
-    return <SummaryContent value={value} highlight={highlight}/>;
+    return <div data-summary-key={summaryKey}><SummaryContent value={value} highlight={highlight} onPageReference={(page, label, button) => {
+      if (!activeDocument) return;
+      const root = button.closest('[data-summary-key]');
+      pageReferenceReturn.current = {summaryKey, index: Array.from(root?.querySelectorAll('.summary-page-link') || []).indexOf(button)};
+      setSourceTrace({kind: 'page-reference', query: label, summaryKey, locations: [{page, snippet: label, score: 1}], index: 0});
+      setSummarySelection(null); setTraceLocations([]); setTraceError('');
+      enterReader(activeDocument, page);
+    }}/></div>;
   };
   const chapterPlan = (index: number) => planChapter(chapters, index);
   const selectedChapter = selectedChapterIndex >= 0 ? chapters[selectedChapterIndex] : undefined;

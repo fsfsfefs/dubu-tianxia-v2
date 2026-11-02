@@ -1,4 +1,27 @@
-import React from 'react';
+import React, {createContext, useContext} from 'react';
+
+export type SummaryPageJump = (page: number, label: string, button: HTMLButtonElement) => void;
+const SummaryPageContext = createContext<SummaryPageJump | undefined>(undefined);
+
+function PageReferences({text}: {text: string}) {
+  const jump = useContext(SummaryPageContext);
+  if (!jump) return <>{text}</>;
+  const pattern = /(?:PDF\s*(?:第\s*)?(\d+)(?:\s*[-–—~～至到]\s*(\d+))?(?:\s*页)?|第\s*(\d+)(?:\s*[-–—~～至到]\s*(\d+))?\s*页|(\d+)(?:\s*[-–—~～至到]\s*(\d+))?\s*页)/gi;
+  const nodes: React.ReactNode[] = [];
+  let offset = 0;
+  for (const match of text.matchAll(pattern)) {
+    const start = Number(match[1] || match[3] || match[5]);
+    const end = Number(match[2] || match[4] || match[6] || start);
+    nodes.push(text.slice(offset, match.index));
+    const label = match[0];
+    nodes.push(start > 0 && end >= start && Number.isSafeInteger(end)
+      ? <button type="button" className="summary-page-link" key={match.index} aria-label={`查看原PDF第${start}页：${label}`} title={`跳到PDF第${start}页开头`} onClick={event => {event.stopPropagation(); jump(start, label, event.currentTarget);}}>{label}</button>
+      : label);
+    offset = match.index! + label.length;
+  }
+  nodes.push(text.slice(offset));
+  return <>{nodes}</>;
+}
 
 type ContentBlock =
   | {kind: 'heading'; text: string}
@@ -186,13 +209,13 @@ function MarkupText({text}: {text: string}) {
   const parts = text.split(pattern).filter(Boolean);
   return <>{parts.map((part, index) => {
     if ((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('__') && part.endsWith('__'))) {
-      return <strong className="content-emphasis" key={index}>{part.slice(2, -2)}</strong>;
+      return <strong className="content-emphasis" key={index}><PageReferences text={part.slice(2, -2)}/></strong>;
     }
-    if (part.startsWith('\x60') && part.endsWith('\x60')) return <code key={index}>{part.slice(1, -1)}</code>;
+    if (part.startsWith('\x60') && part.endsWith('\x60')) return <code key={index}><PageReferences text={part.slice(1, -1)}/></code>;
     if ((part.startsWith('[') && part.endsWith(']')) || (part.startsWith('〔') && part.endsWith('〕'))) {
-      return <span className="content-citation" key={index}>{part.slice(1, -1)}</span>;
+      return <span className="content-citation" key={index}><PageReferences text={part.slice(1, -1)}/></span>;
     }
-    return <React.Fragment key={index}>{part.replace(/~~(.*?)~~/g, '$1')}</React.Fragment>;
+    return <React.Fragment key={index}><PageReferences text={part.replace(/~~(.*?)~~/g, '$1')}/></React.Fragment>;
   })}</>;
 }
 
@@ -202,7 +225,7 @@ function RichText({text, highlight}: {text: string; highlight?: string}) {
   const pattern = highlight.trim().split(/\s+/).filter(Boolean).map(escapedPattern).join('\\s+');
   const match = pattern ? new RegExp(pattern).exec(normalized) : null;
   if (!match || match.index === undefined) return <MarkupText text={text}/>;
-  return <>{normalized.slice(0, match.index)}<mark className="returned-summary-text" data-summary-return="true">{normalized.slice(match.index, match.index + match[0].length)}</mark>{normalized.slice(match.index + match[0].length)}</>;
+  return <><MarkupText text={normalized.slice(0, match.index)}/><mark className="returned-summary-text" data-summary-return="true"><MarkupText text={normalized.slice(match.index, match.index + match[0].length)}/></mark><MarkupText text={normalized.slice(match.index + match[0].length)}/></>;
 }
 
 function StructuredContent({value, highlight, variant}: {value: string | undefined; highlight?: string; variant: 'summary' | 'answer'}) {
@@ -251,8 +274,8 @@ function StructuredContent({value, highlight, variant}: {value: string | undefin
   </div>;
 }
 
-export function SummaryContent({value, highlight}: {value: string | undefined; highlight?: string}) {
-  return <StructuredContent value={value} highlight={highlight} variant="summary"/>;
+export function SummaryContent({value, highlight, onPageReference}: {value: string | undefined; highlight?: string; onPageReference?: SummaryPageJump}) {
+  return <SummaryPageContext.Provider value={onPageReference}><StructuredContent value={value} highlight={highlight} variant="summary"/></SummaryPageContext.Provider>;
 }
 
 export function AnswerContent({value}: {value: string | undefined}) {

@@ -1,0 +1,15 @@
+.summary-document .summary-page-link{display:inline;padding:1px 7px;margin:0 2px;border:1px solid #bfd1bd;border-radius:14px;background:#edf3e9;color:var(--green);font:inherit;font-size:.9em;font-weight:650;cursor:pointer;white-space:nowrap}
+.summary-document .summary-page-link:hover{background:#dce9d8}
+.summary-document .summary-page-link:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.reader-summary-panel[hidden]{display:none}
+.reader-summary-panel .reader-summary-picker{display:flex;flex-direction:column;gap:8px;padding:12px;border-bottom:1px solid var(--line)}
+.reader-summary-picker label{display:flex;flex-direction:column;gap:6px;min-width:0}
+.reader-summary-picker select{width:100%;min-width:0;padding:7px;background:#faf9f4;color:var(--green);border:1px solid var(--line)}
+.reader-summary-content{overflow:auto;flex:1;min-height:0;padding:14px 16px;overflow-wrap:anywhere}
+.reader-summary-content h2{font-size:22px}
+.reader-summary-content .structured-document{font-size:15px}
+.reader-summary-content .summary-page-link{white-space:normal}
+
+.reader-side-panel.reader-summary-panel{width:420px;grid-template-rows:auto auto minmax(0,1fr)}
+.original-reader.side-panel-open.summary-panel-open .pdf-scroll{padding-left:432px}
+@media(max-width:800px){.reader-side-panel.reader-summary-panel{width:min(420px,88vw)}.original-reader.side-panel-open.summary-panel-open .pdf-scroll{padding-left:12px}}

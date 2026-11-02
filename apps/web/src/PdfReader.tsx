@@ -1,6 +1,7 @@
+import {ReaderSummaries} from './features/reader/ReaderSummaries';
 import {usePdfSearch} from './features/reader/usePdfSearch';
 import {useAnnotations} from './features/reader/useAnnotations';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {getDocument, GlobalWorkerOptions, PDFDocumentProxy} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
@@ -16,10 +17,11 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 import {PdfThumbnail, ContinuousPdfPage, INK_TAG} from './PdfPages';
 import type {SelectionState, OutlineEntry, PageRegion, ReaderProps} from './PdfPages';
 export type {SourceTraceLocation, SourceTraceNavigation} from './PdfPages';
-export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onPageChange, onBack, onOpenGuide, onAssistantToggle, assistantOpen, notes = [], onCreatePageNote, onUpdatePageNote, onDeletePageNote, targetPage, targetPageRevision = 0, restoreLastPosition = true, sourceTrace, onSourceTraceNavigate, onSourceTraceReturn, onSourceTraceClose}: ReaderProps) {
+export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onPageChange, onBack, onOpenGuide, onAssistantToggle, assistantOpen, notes = [], chapterSummaries = [], onCreatePageNote, onUpdatePageNote, onDeletePageNote, targetPage, targetPageRevision = 0, restoreLastPosition = true, sourceTrace, onSourceTraceNavigate, onSourceTraceReturn, onSourceTraceClose}: ReaderProps) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [initialPageDimensions, setInitialPageDimensions] = useState({width: 595, height: 842});
   const [pageNumber, setPageNumber] = useState(() => targetPage || 1);
+  const [tailSpace, setTailSpace] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selection, setSelection] = useState<SelectionState>(null);
@@ -27,7 +29,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [error, setError] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
-  const [sidebarMode, setSidebarMode] = useState<'pages' | 'outline' | null>(null);
+  const [sidebarMode, setSidebarMode] = useState<'pages' | 'outline' | 'summary' | null>(null);
+  const [summaryReturn, setSummaryReturn] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
   const [paperTone, setPaperTone] = useState(false);
   const [regionMode, setRegionMode] = useState(false);
@@ -45,7 +48,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const currentPageRef = useRef(pageNumber);
   const currentZoomRef = useRef(zoom);
   const readingPositionRef = useRef({pageNumber, pageOffset: 0});
-  const pendingRestoreRef = useRef<{pageNumber: number; pageOffset: number} | null>(null);
+  const pendingRestoreRef = useRef<{pageNumber: number; pageOffset: number; alignStart?: boolean} | null>(null);
   const positionReadyRef = useRef(false);
   const positionSaveTimer = useRef<number | null>(null);
   const dragStart = useRef<{x: number; y: number} | null>(null);
@@ -86,7 +89,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     positionReadyRef.current = false;
     pendingRestoreRef.current = null;
     if (positionSaveTimer.current !== null) window.clearTimeout(positionSaveTimer.current);
-    setLoading(true); setError(''); setPdf(null); setSelection(null); setResults([]); setQuery(''); setSearchedPages(0); setLastSearchQuery(''); setTextSource('none'); setOcrProgress(null); pageTextCache.current.clear(); ocrCache.current.clear();
+    setSummaryReturn(false); setSidebarMode(null); setLoading(true); setError(''); setPdf(null); setSelection(null); setResults([]); setQuery(''); setSearchedPages(0); setLastSearchQuery(''); setTextSource('none'); setOcrProgress(null); pageTextCache.current.clear(); ocrCache.current.clear();
     Promise.all([getPosition(document.id), listHighlights(document.id), listOcrPages(document.id).catch(() => []), loadingTask.promise])
       .then(async ([position, savedHighlights, savedOcrPages, loadedPdf]) => {
         if (!alive) return;
@@ -98,7 +101,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         const startPage = Math.max(1, Math.min(savedPage, loadedPdf.numPages));
         const pageOffset = restoreLastPosition ? Math.max(0, Math.min(position.page_offset || 0, 1)) : 0;
         readingPositionRef.current = {pageNumber: startPage, pageOffset};
-        pendingRestoreRef.current = {pageNumber: startPage, pageOffset};
+        pendingRestoreRef.current = {pageNumber: startPage, pageOffset, alignStart: !restoreLastPosition};
         setPageNumber(startPage);
         setZoom(position.zoom);
         setHighlights(savedHighlights);
@@ -151,6 +154,18 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     thumbnailListRef.current?.querySelector<HTMLElement>(`[data-thumbnail-page="${pageNumber}"]`)?.scrollIntoView({block: 'nearest'});
   }, [pageNumber, sidebarMode]);
 
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    const lastPage = pdf && root?.querySelector<HTMLElement>(`[data-page-number="${pdf.numPages}"]`);
+    if (!root || !lastPage) {setTailSpace(0); return;}
+    // A short final page still needs enough scroll range to align its top.
+    const update = () => setTailSpace(Math.max(0, root.clientHeight - lastPage.offsetHeight));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(root); observer.observe(lastPage);
+    return () => observer.disconnect();
+  }, [pdf, zoom]);
+
   useEffect(() => {
     if (!pdf) return;
     if (restoreLastPosition) return;
@@ -184,7 +199,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         const page = scroller.querySelector<HTMLElement>(`[data-page-number="${pending.pageNumber}"]`);
         if (!page) return;
         const focusOffset = Math.min(scroller.clientHeight * .42, 360);
-        scroller.scrollTop = Math.max(0, page.offsetTop + pending.pageOffset * page.offsetHeight - focusOffset);
+        scroller.scrollTop = Math.max(0, page.offsetTop + (pending.alignStart ? 0 : pending.pageOffset * page.offsetHeight - focusOffset));
         readingPositionRef.current = pending;
         pendingRestoreRef.current = null;
         readyFrame = window.requestAnimationFrame(() => { positionReadyRef.current = true; });
@@ -351,7 +366,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   };
 
 
-  return <div className={`pdf-reader original-reader ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
+  return <div className={`pdf-reader original-reader ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
     <div className="reader-toolbar original-toolbar">
       <div className="reader-book-heading">
         <button className="back-button" onClick={onBack}>← 返回前一页</button>
@@ -365,6 +380,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
       <div className="toolbar-group reader-tools">
         <button className="preparation-status" type="button">{ocrProgress !== null ? `OCR 识别 ${ocrProgress}%` : loading || textSource === 'none' ? '正在读取文字层…' : textSource === 'ocr' ? 'OCR 文字可选' : '文字层已就绪'}</button>
         <button className={sidebarMode === 'outline' ? 'active' : ''} aria-expanded={sidebarMode === 'outline'} title="目录" onClick={() => setSidebarMode(value => value === 'outline' ? null : 'outline')}><span className="tool-icon" aria-hidden="true">☰</span><span>目录</span></button>
+        <button className={sidebarMode === 'summary' ? 'active' : ''} aria-expanded={sidebarMode === 'summary'} onClick={() => setSidebarMode(value => value === 'summary' ? null : 'summary')}>章节总结</button>
+        {summaryReturn && <button onClick={() => setSidebarMode('summary')}>↩ 返回章节总结</button>}
         <button className={sidebarMode === 'pages' ? 'active' : ''} aria-expanded={sidebarMode === 'pages'} title="页面缩略图" onClick={() => setSidebarMode(value => value === 'pages' ? null : 'pages')}><span className="tool-icon pages-icon" aria-hidden="true">▤</span><span>页面</span></button>
         <button className={searchOpen ? 'active' : ''} aria-expanded={searchOpen} aria-label="书内搜索" title="书内搜索" onClick={() => setSearchOpen(value => {if (value) cancelSearch(); return !value;})}><span className="tool-icon" aria-hidden="true">⌕</span></button>
         <button className={regionMode ? 'active' : ''} aria-pressed={regionMode} title="框选区域解释" onClick={() => {setRegionMode(value => !value); setRegion(null); setAnnotationTool(null);}}><span className="tool-icon" aria-hidden="true">⌗</span><span>框选</span></button>
@@ -407,10 +424,11 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         <footer>{item.rects.length ? <select value={item.color} onChange={event => void recolorHighlight(item, event.target.value as Highlight['color'])}><option value="yellow">黄色</option><option value="green">绿色</option><option value="blue">蓝色</option><option value="pink">粉色</option></select> : <span className="page-marker-label">★ 整页星标</span>}<button onClick={() => {setEditingHighlight(item.id); setHighlightComment(item.comment || ''); setHighlightTags((item.tags || []).join(', '));}}>备注</button>{item.rects.length > 0 && <button onClick={() => onAiAssist ? onAiAssist(item.text, 'explain') : onExcerpt(item.text)}>AI 研读</button>}<button onClick={() => void removeHighlight(item)}>删除</button></footer>
       </article>)}{!visibleHighlights.length && <p>{managedHighlights.length ? '没有匹配的高亮。' : '选中文本后可以创建高亮。'}</p>}</div>
     </div>}
-    {sidebarMode && pdf && <aside className="reader-side-panel" aria-label="页面与目录导航">
-      <header><nav><button className={sidebarMode === 'pages' ? 'active' : ''} aria-selected={sidebarMode === 'pages'} onClick={() => setSidebarMode('pages')}>页面</button><button className={sidebarMode === 'outline' ? 'active' : ''} aria-selected={sidebarMode === 'outline'} onClick={() => setSidebarMode('outline')}>目录</button></nav><span>{sidebarMode === 'pages' ? `${pageNumber} / ${pdf.numPages}` : `${outline.length} 项`}</span><button className="side-panel-collapse" aria-label="收起页面与目录导航" onClick={() => setSidebarMode(null)}>‹</button></header>
+    {sidebarMode && sidebarMode !== 'summary' && pdf && <aside className="reader-side-panel" aria-label="页面与目录导航">
+      <header><nav><button className={sidebarMode === 'pages' ? 'active' : ''} aria-selected={sidebarMode === 'pages'} onClick={() => setSidebarMode('pages')}>页面</button><button className={sidebarMode === 'outline' ? 'active' : ''} aria-selected={sidebarMode === 'outline'} onClick={() => setSidebarMode('outline')}>目录</button><button onClick={() => setSidebarMode('summary')}>总结</button></nav><span>{sidebarMode === 'pages' ? `${pageNumber} / ${pdf.numPages}` : `${outline.length} 项`}</span><button className="side-panel-collapse" aria-label="收起页面与目录导航" onClick={() => setSidebarMode(null)}>‹</button></header>
       {sidebarMode === 'pages' ? <div className="thumbnail-list" ref={thumbnailListRef}>{Array.from({length: pdf.numPages}, (_, index) => <PdfThumbnail key={index + 1} pdf={pdf} pageNumber={index + 1} current={pageNumber === index + 1} marked={highlights.some(item => item.page_number === index + 1 && item.rects.length === 0)} scrollRoot={thumbnailListRef} onSelect={changePage} onToggleMark={page => void togglePageMark(page)}/>)}</div> : <div className="side-outline-list">{outline.map((item, index) => <button key={`${item.title}-${index}`} style={{paddingLeft: `${12 + item.depth * 14}px`}} aria-current={item.page === pageNumber ? 'page' : undefined} onClick={() => changePage(item.page)}><span>{item.title}</span><small>{item.page}</small></button>)}{!outline.length && <p>尚未从教材书签建立目录。</p>}</div>}
     </aside>}
+    {pdf && <ReaderSummaries key={document.id} active={sidebarMode === 'summary'} page={pageNumber} summaries={chapterSummaries} onClose={() => setSidebarMode(null)} onPages={() => setSidebarMode('pages')} onOutline={() => setSidebarMode('outline')} onJump={page => {setSummaryReturn(true); changePage(page); setSidebarMode(null);}}/>}
     {notePanelOpen && <aside className="reader-note-panel" aria-label="页边便签">
       <header><div><small>PDF 第 {pageNumber} 页</small><strong>页边便签</strong></div><button aria-label="关闭便签栏" onClick={() => setNotePanelOpen(false)}>×</button></header>
       <form onSubmit={event => {event.preventDefault(); const content = stickyDraft.trim(); if (!content || !onCreatePageNote) return; void onCreatePageNote(pageNumber, content).then(() => setStickyDraft('')).catch(() => undefined);}}>
@@ -424,7 +442,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     </aside>}
     {sourceTrace && sourceTrace.locations.length > 0 && <aside className="source-trace-bar" aria-label="原文溯源导航">
       <div><small>原文溯源 {sourceTrace.index + 1} / {sourceTrace.locations.length}</small><strong>PDF 第 {sourceTrace.locations[sourceTrace.index].page} 页</strong><span>{sourceTrace.locations[sourceTrace.index].snippet}</span></div>
-      <nav><button className="trace-return" onClick={onSourceTraceReturn}>↩ 返回选中内容</button><button disabled={sourceTrace.index <= 0} onClick={() => moveToTrace(sourceTrace.index - 1)}>← 上一处</button><button disabled={sourceTrace.index >= sourceTrace.locations.length - 1} onClick={() => moveToTrace(sourceTrace.index + 1)}>下一处 →</button><button aria-label="关闭原文溯源" onClick={onSourceTraceClose}>×</button></nav>
+      <nav><button className="trace-return" onClick={onSourceTraceReturn}>{sourceTrace.kind === 'page-reference' ? '↩ 返回总结' : '↩ 返回选中内容'}</button><button disabled={sourceTrace.index <= 0} onClick={() => moveToTrace(sourceTrace.index - 1)}>← 上一处</button><button disabled={sourceTrace.index >= sourceTrace.locations.length - 1} onClick={() => moveToTrace(sourceTrace.index + 1)}>下一处 →</button><button aria-label="关闭原文溯源" onClick={onSourceTraceClose}>×</button></nav>
     </aside>}
     <div
       ref={scrollRef}
@@ -467,6 +485,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
           onPointerUp={finishRegion}
         />;
       })}
+      {tailSpace > 0 && <div aria-hidden="true" style={{height: tailSpace, flexShrink: 0}}/>}
     </div>
     {selection && <div className="selection-actions"><span>已选择 {selection.text.length} 字</span><button onClick={() => void copySelection()}>{copied ? '已复制' : '复制'}</button><details><summary>AI 研读</summary><div className="selection-ai-menu"><button onClick={() => onAiAssist?.(selection.text, 'explain')}>解释概念</button><button onClick={() => onAiAssist?.(selection.text, 'summary')}>提炼要点</button><button onClick={() => onAiAssist?.(selection.text, 'questions')}>生成问题</button><button onClick={() => onAiAssist?.(selection.text, 'connect')}>联系全书</button></div></details><button className="accent" onClick={saveHighlight}>高亮</button><button onClick={() => setSelection(null)}>×</button></div>}
   </div>;

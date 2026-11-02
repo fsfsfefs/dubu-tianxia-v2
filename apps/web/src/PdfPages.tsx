@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import {saveOcrPage, type DocumentRecord, type Highlight, type HighlightRect, type Note} from './api';
+import {saveOcrPage, type ChapterSummary, type DocumentRecord, type Highlight, type HighlightRect, type Note} from './api';
 import './pdf-reader.css';
 import {AnnotationLayer, type InkStyle} from './features/reader/AnnotationLayer';
 import './features/reader/AnnotationLayer.css';
@@ -21,7 +21,7 @@ export const INK_TAG = '__ink__';
 
 export {smoothAnnotationPath} from './features/reader/inkPath';
 export type SourceTraceLocation = {page: number; snippet: string; score: number};
-export type SourceTraceNavigation = {query: string; summaryKey: string; locations: SourceTraceLocation[]; index: number};
+export type SourceTraceNavigation = {kind?: 'page-reference'; query: string; summaryKey: string; locations: SourceTraceLocation[]; index: number};
 
 export {matchPageText} from './features/reader/searchText';
 
@@ -36,6 +36,7 @@ export type ReaderProps = {
   onAssistantToggle?: () => void;
   assistantOpen?: boolean;
   notes?: Note[];
+  chapterSummaries?: ChapterSummary[];
   onCreatePageNote?: (page: number, content: string) => Promise<void>;
   onUpdatePageNote?: (note: Note, content: string) => Promise<void>;
   onDeletePageNote?: (note: Note) => Promise<void>;
