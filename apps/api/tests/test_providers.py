@@ -200,3 +200,21 @@ def test_http_content_rejection_is_classified_but_bad_parameters_are_not():
     invalid = httpx.Response(400, request=request, json={'error': {'message': 'Unsupported parameter temperature'}})
     with pytest.raises(httpx.HTTPStatusError):
         check_http_response(invalid)
+
+
+def test_complete_timeout_override_is_per_request_and_preserves_client_default():
+    import asyncio
+    from reader_next_api.providers import OpenAICompatibleProvider
+    observed = []
+    def respond(request):
+        observed.append(request.extensions["timeout"])
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond), timeout=7) as client:
+            provider = OpenAICompatibleProvider(client)
+            profile = ModelProfile("test", "Test", "https://example.com/chat/completions", "test")
+            for options in [{}, {"timeout": 300}, {}]:
+                assert await provider.complete(profile, "test-key", system="system", prompt="prompt", **options) == "ok"
+    asyncio.run(run())
+    assert [item["read"] for item in observed] == [7, 300, 7]
+    assert observed[1] == {"connect": 20, "read": 300, "write": 60, "pool": 20}

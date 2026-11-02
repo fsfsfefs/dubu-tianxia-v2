@@ -325,7 +325,8 @@ class OpenAICompatibleProvider:
                 await client.aclose()
 
     async def complete(
-        self, profile: ModelProfile, api_key: str, *, system: str, prompt: str, images: list[str] | None = None
+        self, profile: ModelProfile, api_key: str, *, system: str, prompt: str, images: list[str] | None = None,
+        timeout: float | None = None
     ) -> str:
         responses_api = uses_responses_api(profile)
         content = prompt
@@ -349,6 +350,7 @@ class OpenAICompatibleProvider:
                 profile.endpoint,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=body,
+                **({"timeout": httpx.Timeout(timeout, connect=20, write=60, pool=20)} if timeout is not None else {}),
             )
             check_http_response(response)
             payload = response.json()

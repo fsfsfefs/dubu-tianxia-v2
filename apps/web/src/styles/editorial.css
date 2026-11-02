@@ -296,17 +296,20 @@ font-size:11px}
 
 .folder-toolbar{
 display:flex;
-align-items:center;
+flex-wrap:wrap;
+align-items:flex-start;
 justify-content:space-between;
 gap:16px;
 padding:13px 0;
 border-bottom:1px solid var(--line)}
 .folder-toolbar>nav{
 display:flex;
+flex:1 1 300px;
+min-width:0;
+flex-wrap:wrap;
 align-items:center;
 gap:6px;
-overflow-x:auto;
-scrollbar-width:thin}
+overflow:visible}
 .folder-toolbar nav>button,.folder-tab>button,.new-folder{
 flex:0 0 auto;
 display:flex;
@@ -339,36 +342,15 @@ display:flex;
 align-items:stretch}
 .folder-tab>button{
 padding-right:30px}
-.folder-tab>details{
-position:absolute;
-right:2px;
-top:1px;
-z-index:5}
-.folder-tab summary{
-list-style:none;
-cursor:pointer;
-padding:7px 5px;
-color:#758077}
-.folder-tab summary::-webkit-details-marker{
-display:none}
-.folder-tab details>div{
-position:absolute;
-right:0;
-top:100%;
-z-index:45;
-display:grid;
-min-width:130px;
-padding:5px;
-background:#fbfaf5;
-border:1px solid var(--line);
-box-shadow:0 10px 24px #35403720}
-.folder-tab details button{
-border:0;
-background:transparent;
-color:var(--ink);
-padding:7px 9px;
-text-align:left;
-white-space:nowrap}
+.folder-tab{min-width:0;max-width:100%}
+.folder-tab>button>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;min-width:0}
+.folder-tab>.folder-actions-trigger{position:absolute;right:2px;top:1px;bottom:1px;width:28px;padding:0;border:0;background:transparent;color:var(--green);cursor:pointer}
+.folder-actions-menu{position:fixed;z-index:100;display:grid;gap:3px;width:min(200px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:7px;background:#fbfaf5;border:1px solid var(--line);box-shadow:0 10px 24px #35403730;font:13px/1.5 var(--font-ui);color:var(--ink)}
+.folder-actions-menu strong{padding:5px 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.folder-actions-menu button{border:0;background:transparent;color:var(--ink);padding:9px;text-align:left;cursor:pointer;font:inherit}
+.folder-actions-menu button:hover,.folder-actions-menu button:focus-visible{background:var(--green-soft);outline:2px solid #9eb3a0;outline-offset:-2px}
+.folder-actions-menu .danger-text{color:#a34036}
+.folder-actions-menu small{padding:5px 9px;color:var(--muted);font-size:11px}
 .move-book-label{
 display:grid;
 gap:5px;

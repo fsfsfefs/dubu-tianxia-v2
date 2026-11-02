@@ -9,6 +9,13 @@ export function OutlineEditor({documentId,onClose,onSaved}:Props){
  const [profiles,setProfiles]=useState<ModelProfile[]>([]),[profile,setProfile]=useState('');
  const [busy,setBusy]=useState('正在读取原文目录…'),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [preview,setPreview]=useState(1);
+ const [modelStarted,setModelStarted]=useState<number|null>(null),[waitSeconds,setWaitSeconds]=useState(0);
+ useEffect(()=>{
+  if(modelStarted===null)return;
+  const update=()=>setWaitSeconds(Math.floor((Date.now()-modelStarted)/1000));
+  update();const timer=window.setInterval(update,1000);
+  return ()=>window.clearInterval(timer);
+ },[modelStarted]);
  const active=useRef(true),request=useRef<AbortController|null>(null),running=useRef(false);
  const dialog=useRef<HTMLDivElement>(null);
  useEffect(()=>{
@@ -28,12 +35,12 @@ export function OutlineEditor({documentId,onClose,onSaved}:Props){
    setBusy('准备全书文字…');
    await collectSource(documentId,1,undefined,p=>{if(active.current)setBusy(`准备原文 PDF ${p.page} · ${p.completed}/${p.total}${p.phase==='ocr'?' · OCR识别中':''}`);},controller.signal);
    if(controller.signal.aborted)return;
-   setBusy('AI正在生成目录草稿…');
+   setWaitSeconds(0);setModelStarted(Date.now());setBusy('AI正在生成目录草稿…');
    const draft=await generateDocumentOutline(documentId,profile,controller.signal);
    if(!active.current || controller.signal.aborted)return;
    setRows(draft.outline);setMetadata(draft);setNotice((draft.message || '')+(draft.unreadable_pages?` 有${draft.unreadable_pages}页未识别到文字，请特别核对。`:''));
   }catch(reason){if(active.current && !controller.signal.aborted)setError(reason instanceof Error?reason.message:'生成失败');}
-  finally{running.current=false;if(active.current)setBusy('');}
+  finally{running.current=false;if(active.current){setBusy('');setModelStarted(null);}}
  };
  const save=async()=>{
   if(running.current || !metadata)return;
@@ -55,7 +62,7 @@ export function OutlineEditor({documentId,onClose,onSaved}:Props){
   <header><div><h2>目录编辑与校对</h2><small>{metadata?`共 ${metadata.page_count} 页 · ${metadata.source==='pdf'?'已使用原文书签':metadata.source==='none'?'原文没有电子目录':metadata.source==='ai-draft'?'AI草稿，尚未保存':'已保存目录'}`:'读取中'}</small></div><button disabled={busy==='保存目录…'} onClick={onClose}>关闭</button></header>
   <p className="outline-editor-help">已有目录优先使用；没有时可用AI生成草稿。页码填写实际PDF页码（含封面），层级从0开始。修改标题、页码或层级后，原总结会保留，可能需要重新生成对应章节总结。</p>
   {(!metadata || metadata.source==='none' || metadata.source==='ai-draft') && <div className="outline-ai-controls"><label>生成目录模型<select aria-label="生成目录模型" value={profile} disabled={!!busy} onChange={e=>setProfile(e.target.value)}>{!profiles.length && <option value="">请先保存模型配置</option>}{profiles.map(item=><option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}</select></label><button disabled={!metadata || !profile || !!busy || metadata.page_count>3000} onClick={()=>void generate()}>AI生成目录草稿</button></div>}
-  {metadata && metadata.page_count>3000 && <p>超过3000页，请人工编写或导入目录。</p>}{busy && <p role="status">{busy}</p>}{notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
+  {metadata && metadata.page_count>3000 && <p>超过3000页，请人工编写或导入目录。</p>}{busy && <p role="status">{busy}{modelStarted!==null && ` 已等待${waitSeconds}秒，最多等待5分钟。可关闭窗口取消本次等待。`}</p>}{notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
   <div className="outline-editor-body"><div className="outline-editor-list"><div className="outline-column-labels">章节标题 / PDF页码 / 层级</div>{rows.map((row,index)=><div className="outline-edit-row" key={index}>
    <input aria-label={`第${index+1}项标题`} value={row.title} maxLength={500} disabled={!!busy} onChange={e=>change(index,{title:e.target.value})}/>
    <input aria-label={`第${index+1}项页码`} type="number" min="1" max={metadata?.page_count} value={row.page} disabled={!!busy} onChange={e=>change(index,{page:Number(e.target.value)})}/>

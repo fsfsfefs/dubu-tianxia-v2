@@ -52,6 +52,7 @@ def test_ai_is_reviewable_draft_then_shared_save_and_stale_protection(setup):
     assert runtime.repository.get_imported_outline(doc)==[]
     assert 'PDF实际第4页' in calls[0][1]['prompt']
     assert '印刷页码须转换' in calls[0][1]['system']
+    assert calls[0][1]['timeout'] == 300
     runtime.repository.save_chapter_summary(doc,doc+':__book__','全书',1,4,0,'已有总结')
     items=draft.json()['outline'];items[1]['title']='人工校对第二章';items[1]['page']=4
     saved=client.put(url,json={'outline':items,'expected_revision':before['revision']})
@@ -118,3 +119,35 @@ def test_concurrent_outline_edits_reject_the_stale_writer(setup):
         results=list(pool.map(save,['编辑甲','编辑乙']))
     assert sorted(results)==[200,409]
     assert len(runtime.repository.get_imported_outline(doc))==1
+
+
+@pytest.mark.parametrize("failure", ["network", "deadline"])
+def test_outline_timeout_preserves_learning_data_and_does_not_retry(setup, monkeypatch, failure):
+    import asyncio
+    import httpx
+    from reader_next_api.routes import outline
+    client, runtime, doc, _, _ = setup
+    runtime.repository.save_chapter_summary(doc, doc+":__book__", "已有总结", 1, 4, 0, "保留正文")
+    attempts, cancelled = [], []
+    async def slow(*args, **kwargs):
+        attempts.append(kwargs)
+        if failure == "network":
+            raise httpx.ReadTimeout("slow model")
+        try:
+            await asyncio.sleep(1)
+        finally:
+            cancelled.append(True)
+    runtime.provider.complete = slow
+    if failure == "deadline":
+        monkeypatch.setattr(outline, "OUTLINE_GENERATION_TIMEOUT", .01)
+    url = f"/api/documents/{doc}/outline"
+    before = client.get(url).json()
+    result = client.post(url+"/generate", json={"profile_id": "test"})
+    assert result.status_code == 504
+    assert "目录模型连接或响应超时" in result.json()["detail"]
+    assert "未被覆盖" in result.json()["detail"]
+    assert len(attempts) == 1
+    if failure == "deadline":
+        assert cancelled == [True]
+    assert client.get(url).json() == before
+    assert runtime.repository.list_chapter_summaries(doc)[0]["content"] == "保留正文"

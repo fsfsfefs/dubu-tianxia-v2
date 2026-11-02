@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 async function clone(page,source,title){
+ title+=` ${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
  const docs=(await(await page.request.get('/api/documents')).json()).documents;
  const original=docs.find(item=>item.title===source);
  const buffer=await(await page.request.get(`/api/documents/${original.id}/file`)).body();
@@ -62,4 +63,38 @@ test('original PDF bookmarks are reused and can be corrected without AI',async({
  await dialog.getByRole('button',{name:'保存校对目录'}).click();
  await expect(dialog).not.toBeVisible();
  await expect(page.locator('.chapter-entry').filter({hasText:'原目录人工修订'})).toBeVisible();
+});
+
+
+test('outline waiting time is visible and a timeout preserves manual draft for retry',async({page},testInfo)=>{
+ const book=await clone(page,'E2E Native','Outline Timeout '+testInfo.project.name);
+ await page.route('**/api/model-profiles',route=>route.fulfill({json:{profiles:[{id:'fake',name:'测试模型',model:'test-model'}]}}));
+ const current=await(await page.request.get(`/api/documents/${book.id}/outline`)).json();
+ let requests=0,finish;
+ await page.route(`**/api/documents/${book.id}/outline/generate`,async route=>{
+  requests++;
+  if(requests===1){
+   await new Promise(resolve=>{finish=resolve;});
+   await route.fulfill({status:504,json:{detail:'目录模型连接或响应超时（单次生成最多等待5分钟）。现有目录和编辑内容未被覆盖。'}});
+  } else await route.fulfill({json:{...current,generated:true,source:'ai-draft',outline:[{title:'重试成功章节',page:1,depth:0}]}});
+ });
+ await page.goto('/');
+ await page.locator('.library-book').filter({hasText:book.title}).getByRole('button',{name:/打开教材/}).click();
+ await page.getByRole('button',{name:'生成 / 编辑目录',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'目录编辑与校对'});
+ await expect(dialog.getByRole('button',{name:'AI生成目录草稿'})).toBeEnabled();
+ await dialog.getByRole('button',{name:'＋ 添加章节',exact:true}).click();
+ await dialog.getByLabel('第1项标题').fill('人工草稿保留');
+ await dialog.getByRole('button',{name:'AI生成目录草稿'}).click();
+ await expect(dialog.getByRole('status')).toContainText('最多等待5分钟');
+ await expect(dialog.getByRole('status')).toContainText('已等待1秒');
+ await expect.poll(()=>typeof finish).toBe('function');finish();
+ await expect(dialog.getByRole('alert')).toContainText('超时');
+ await expect(dialog.getByLabel('第1项标题')).toHaveValue('人工草稿保留');
+ expect(requests).toBe(1);
+ expect((await(await page.request.get(`/api/documents/${book.id}/outline`)).json()).outline).toHaveLength(0);
+ await dialog.getByRole('button',{name:'AI生成目录草稿'}).click();
+ await expect(dialog.getByLabel('第1项标题')).toHaveValue('重试成功章节');
+ expect(requests).toBe(2);
+ await dialog.getByRole('button',{name:'关闭',exact:true}).click();
 });

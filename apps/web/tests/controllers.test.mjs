@@ -256,3 +256,26 @@ test('chat image upload accepts files above 3MB through the 20MB boundary',async
  assert.equal(hook.result.current.images.length,2);
  assert.equal(errors.length,0);
 });
+
+
+test('folder action menu escapes clipping, names its folder and closes after actions or Escape',async()=>{
+ const {FolderActions}=await import('../.tmp/tests/features/library/FolderActions.js');
+ const calls=[],folder={id:'folder-a',name:'学习分类',document_count:1};
+ const view=render(React.createElement(FolderActions,{folder,onRename:item=>calls.push(['rename',item.id]),onDelete:item=>calls.push(['delete',item.id])}));
+ const trigger=view.getByRole('button',{name:'学习分类 文件夹设置'});
+ fireEvent.click(trigger);
+ let menu=view.getByRole('menu',{name:'学习分类 文件夹操作'});
+ assert.equal(menu.parentElement,document.body);
+ assert.equal(document.activeElement,view.getByRole('menuitem',{name:'重命名'}));
+ fireEvent.keyDown(menu,{key:'ArrowDown'});
+ assert.equal(document.activeElement,view.getByRole('menuitem',{name:'删除文件夹'}));
+ fireEvent.keyDown(menu,{key:'Escape'});
+ assert.equal(view.queryByRole('menu'),null);assert.equal(document.activeElement,trigger);
+ fireEvent.click(trigger);fireEvent.click(view.getByRole('menuitem',{name:'重命名'}));
+ assert.equal(view.queryByRole('menu'),null);
+ fireEvent.click(trigger);fireEvent.click(view.getByRole('menuitem',{name:'删除文件夹'}));
+ assert.deepEqual(calls,[['rename','folder-a'],['delete','folder-a']]);
+ assert.equal(view.queryByRole('menu'),null);
+ fireEvent.click(trigger);fireEvent.pointerDown(document.body);
+ assert.equal(view.queryByRole('menu'),null);
+});
