@@ -54,3 +54,20 @@
 @container pdf-reader (max-width:850px){.original-toolbar{grid-template-columns:auto auto minmax(0,1fr)}.reader-book-heading h1{display:none}.original-toolbar .toolbar-group button{padding-inline:8px}.original-toolbar .tool-icon+span{display:none}.original-toolbar .reader-tools{gap:4px}.original-toolbar .reader-tools button{min-width:34px}.reader-book-heading .back-button{font-size:0}.reader-book-heading .back-button::first-letter{font-size:16px}}
 @media(max-width:1100px){.original-toolbar .preparation-status{display:none}}
 @media(max-width:800px){.pdf-scroll{padding:12px}.original-reader.side-panel-open .pdf-scroll{padding-left:12px}.original-reader.note-panel-open .pdf-scroll{padding-right:12px}.reader-side-panel{width:min(284px,84vw)}.reader-note-panel{width:min(304px,88vw)}.annotation-toolbar{left:8px;right:8px;transform:none;overflow:auto;justify-content:flex-start}.selection-actions{bottom:10px}}
+
+/* Keep every reading tool reachable without clipping or hidden horizontal scrolling. */
+.original-reader{--reader-toolbar-height:56px;grid-template-rows:auto minmax(0,1fr)}
+.original-toolbar{position:relative;z-index:12;height:auto;min-height:56px;padding-block:8px;grid-template-columns:minmax(120px,1fr) auto minmax(0,3fr)}
+.original-toolbar .reader-tools{overflow:visible;flex-wrap:wrap;justify-content:flex-end;row-gap:6px}
+.original-toolbar .page-controls input{background:#fffef9;color:#26352c;border-color:#c8cec4;color-scheme:light}
+.reader-more{position:static}
+.reader-more>div{top:100%;right:8px;min-width:0;max-width:calc(100% - 16px);flex-wrap:wrap}
+.original-reader .reader-side-panel,.original-reader .reader-note-panel{top:var(--reader-toolbar-height)}
+.original-reader .annotation-toolbar,.original-reader .pdf-status,.original-reader .highlight-panel{top:calc(var(--reader-toolbar-height) + 8px)}
+.original-reader .search-panel,.original-reader .source-trace-bar{top:calc(var(--reader-toolbar-height) + 14px)}
+.original-reader .search-panel{max-height:calc(100% - var(--reader-toolbar-height) - 36px)}
+@container pdf-reader (max-width:1180px){
+  .original-toolbar{grid-template-columns:minmax(0,1fr) auto}
+  .original-toolbar .page-controls{justify-self:end}
+  .original-toolbar .reader-tools{grid-column:1/-1;justify-content:flex-start}
+}

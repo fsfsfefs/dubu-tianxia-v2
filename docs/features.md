@@ -33,7 +33,7 @@ Windows桌面版：desktop.py组合既有API、静态前端与Edge WebView2原�
 实现：[PdfReader.tsx](../apps/web/src/PdfReader.tsx)、[ocr.ts](../apps/web/src/ocr.ts)、[pdfOutline.ts](../apps/web/src/pdfOutline.ts)。
 
 - PDF.js 连续纵向阅读，附近页面按需渲染。
-- 页码输入、上一页、下一页、总页数和当前页跟随。
+- 页码输入、上一页、下一页、总页数和当前页跟随。工具栏按阅读区域宽度换行，窄窗口保留完整操作入口；侧栏和弹出面板随工具栏高度定位。
 - 缩放 50%—300%，恢复适应宽度；柔和纸色开关。
 - 页面缩略图导航、当前页跟随、页面星标切换。
 - 可收起的页面/目录共享侧栏；从 PDF 自带书签读取嵌套目录和目标页码。

@@ -32,5 +32,37 @@ test('summary references jump to PDF page top and return to the same chapter and
  await expect(page.locator('.page-controls input')).toHaveValue('1');
  await page.getByRole('button',{name:'↩ 返回章节总结',exact:true}).click();
  await expect(panel).toBeVisible();
+ await panel.getByRole('button',{name:'关闭章节总结'}).click();
+ for(const width of [1440,1180,900,640]){
+  await page.setViewportSize({width,height:1000});
+  const toolbar=page.locator('.original-toolbar');
+  await expect.poll(()=>toolbar.evaluate(root=>{
+   const bounds=root.getBoundingClientRect();
+   const buttons=[...root.querySelectorAll('.reader-tools > button, .reader-more > summary')].filter(b=>getComputedStyle(b).display!=='none');
+   const rects=buttons.map(b=>b.getBoundingClientRect());
+   return rects.every(r=>r.left>=bounds.left && r.right<=bounds.right+1 && r.top>=bounds.top && r.bottom<=bounds.bottom+1)
+    && rects.every((a,i)=>rects.slice(i+1).every(b=>a.right<=b.left+1 || b.right<=a.left+1 || a.bottom<=b.top+1 || b.bottom<=a.top+1));
+  })).toBe(true);
+  await toolbar.locator('.reader-more > summary').click();
+  const settings=toolbar.locator('.reader-more > div');
+  await expect(settings).toBeVisible();
+  const paper=settings.getByRole('checkbox',{name:'柔和纸色'});
+  await paper.check();await expect(paper).toBeChecked();await paper.uncheck();
+  const bounds=await toolbar.boundingBox();
+  const popup=await settings.boundingBox();
+  expect(popup.y).toBeGreaterThanOrEqual(bounds.y+bounds.height-1);
+  expect(popup.x).toBeGreaterThanOrEqual(bounds.x);
+  expect(popup.x+popup.width).toBeLessThanOrEqual(bounds.x+bounds.width+1);
+  await toolbar.locator('.reader-more > summary').click();
+  await toolbar.getByRole('button',{name:'章节总结',exact:true}).click();
+  await expect.poll(async()=>{
+   const t=await toolbar.boundingBox();const p=await panel.boundingBox();
+   return Math.abs(p.y-t.y-t.height);
+  }).toBeLessThan(2);
+  if(width===1180)await page.screenshot({path:'.tmp/reader-toolbar-fixed.png'});
+  await panel.getByRole('button',{name:'关闭章节总结'}).click();
+ }
+ await page.setViewportSize({width:1440,height:1000});
+ await page.getByRole('button',{name:'章节总结',exact:true}).click();
  await expect(panel.getByLabel('查看章节总结')).toHaveValue((await (await page.request.get(`/api/documents/${book.id}/chapter-summaries`)).json()).summaries.find(s=>s.title==='第二章测试').chapter_key);
 });

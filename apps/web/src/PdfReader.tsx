@@ -43,6 +43,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [textSource, setTextSource] = useState<'native' | 'ocr' | 'none'>('none');
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const thumbnailListRef = useRef<HTMLDivElement>(null);
   const currentPageRef = useRef(pageNumber);
@@ -82,6 +83,16 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   }, [flushReadingPosition]);
 
   useAutoDismiss(error, () => setError(''));
+
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+    const updateHeight = () => toolbar.parentElement?.style.setProperty('--reader-toolbar-height', `${toolbar.getBoundingClientRect().height}px`);
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -367,14 +378,14 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
 
 
   return <div className={`pdf-reader original-reader ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
-    <div className="reader-toolbar original-toolbar">
+    <div ref={toolbarRef} className="reader-toolbar original-toolbar">
       <div className="reader-book-heading">
         <button className="back-button" onClick={onBack}>← 返回前一页</button>
         <h1>{document.title}</h1>
       </div>
       <div className="toolbar-group page-controls" aria-label="PDF 翻页">
         <button aria-label="上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}>←</button>
-        <label><input value={pageNumber} type="number" min="1" max={pdf?.numPages || 1} onChange={event => changePage(Number(event.target.value))}/> / {pdf?.numPages || '—'}</label>
+        <label><input aria-label="PDF页码" value={pageNumber} type="number" min="1" max={pdf?.numPages || 1} onChange={event => changePage(Number(event.target.value))}/> / {pdf?.numPages || '—'}</label>
         <button aria-label="下一页" disabled={!pdf || pageNumber >= pdf.numPages} onClick={() => changePage(pageNumber + 1)}>→</button>
       </div>
       <div className="toolbar-group reader-tools">
