@@ -1,3 +1,4 @@
+import {OutlineEditor} from './features/outline/OutlineEditor';
 import {ReaderSummaries} from './features/reader/ReaderSummaries';
 import {usePdfSearch} from './features/reader/usePdfSearch';
 import {useAnnotations} from './features/reader/useAnnotations';
@@ -5,7 +6,7 @@ import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {getDocument, GlobalWorkerOptions, PDFDocumentProxy} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
-  getPosition, Highlight,
+  getPosition, getDocumentOutline, Highlight,
   listHighlights, listOcrPages, savePosition,
 } from './api';
 import './pdf-reader.css';
@@ -39,6 +40,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [stickyDraft, setStickyDraft] = useState('');
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null);
   const [editingStickyContent, setEditingStickyContent] = useState('');
+  const [outlineEditorOpen,setOutlineEditorOpen]=useState(false);
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
   const [textSource, setTextSource] = useState<'native' | 'ocr' | 'none'>('none');
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
@@ -100,7 +102,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     positionReadyRef.current = false;
     pendingRestoreRef.current = null;
     if (positionSaveTimer.current !== null) window.clearTimeout(positionSaveTimer.current);
-    setSummaryReturn(false); setSidebarMode(null); setLoading(true); setError(''); setPdf(null); setSelection(null); setResults([]); setQuery(''); setSearchedPages(0); setLastSearchQuery(''); setTextSource('none'); setOcrProgress(null); pageTextCache.current.clear(); ocrCache.current.clear();
+    setOutline([]); setOutlineEditorOpen(false); setSummaryReturn(false); setSidebarMode(null); setLoading(true); setError(''); setPdf(null); setSelection(null); setResults([]); setQuery(''); setSearchedPages(0); setLastSearchQuery(''); setTextSource('none'); setOcrProgress(null); pageTextCache.current.clear(); ocrCache.current.clear();
     Promise.all([getPosition(document.id), listHighlights(document.id), listOcrPages(document.id).catch(() => []), loadingTask.promise])
       .then(async ([position, savedHighlights, savedOcrPages, loadedPdf]) => {
         if (!alive) return;
@@ -119,21 +121,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         savedOcrPages.forEach(item => pageTextCache.current.set(item.page_number, item.text));
         setSearchedPages(pageTextCache.current.size);
         setPdf(loadedPdf);
-        void loadedPdf.getOutline().then(async items => {
-          const entries: OutlineEntry[] = [];
-          const walk = async (nodes: typeof items, depth: number) => {
-            for (const item of nodes || []) {
-              try {
-                const destination = typeof item.dest === 'string' ? await loadedPdf.getDestination(item.dest) : item.dest;
-                const reference = destination?.[0];
-                const page = reference && typeof reference === 'object' ? (await loadedPdf.getPageIndex(reference)) + 1 : 1;
-                entries.push({title: item.title || '未命名章节', page, depth});
-              } catch { entries.push({title: item.title || '未命名章节', page: 1, depth}); }
-              if (item.items?.length) await walk(item.items, depth + 1);
-            }
-          };
-          await walk(items, 0); if (alive) setOutline(entries);
-        });
+        void getDocumentOutline(document.id).then(result=>{if(alive)setOutline(result.outline);}).catch(reason=>{if(alive)setError(reason.message);});
       })
       .catch(reason => {
         if (alive) setError(reason instanceof Error ? reason.message : 'PDF 加载失败');
@@ -378,6 +366,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
 
 
   return <div className={`pdf-reader original-reader ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
+    {outlineEditorOpen && <OutlineEditor documentId={document.id} onClose={()=>setOutlineEditorOpen(false)} onSaved={setOutline}/>}
     <div ref={toolbarRef} className="reader-toolbar original-toolbar">
       <div className="reader-book-heading">
         <button className="back-button" onClick={onBack}>← 返回前一页</button>
@@ -437,7 +426,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     </div>}
     {sidebarMode && sidebarMode !== 'summary' && pdf && <aside className="reader-side-panel" aria-label="页面与目录导航">
       <header><nav><button className={sidebarMode === 'pages' ? 'active' : ''} aria-selected={sidebarMode === 'pages'} onClick={() => setSidebarMode('pages')}>页面</button><button className={sidebarMode === 'outline' ? 'active' : ''} aria-selected={sidebarMode === 'outline'} onClick={() => setSidebarMode('outline')}>目录</button><button onClick={() => setSidebarMode('summary')}>总结</button></nav><span>{sidebarMode === 'pages' ? `${pageNumber} / ${pdf.numPages}` : `${outline.length} 项`}</span><button className="side-panel-collapse" aria-label="收起页面与目录导航" onClick={() => setSidebarMode(null)}>‹</button></header>
-      {sidebarMode === 'pages' ? <div className="thumbnail-list" ref={thumbnailListRef}>{Array.from({length: pdf.numPages}, (_, index) => <PdfThumbnail key={index + 1} pdf={pdf} pageNumber={index + 1} current={pageNumber === index + 1} marked={highlights.some(item => item.page_number === index + 1 && item.rects.length === 0)} scrollRoot={thumbnailListRef} onSelect={changePage} onToggleMark={page => void togglePageMark(page)}/>)}</div> : <div className="side-outline-list">{outline.map((item, index) => <button key={`${item.title}-${index}`} style={{paddingLeft: `${12 + item.depth * 14}px`}} aria-current={item.page === pageNumber ? 'page' : undefined} onClick={() => changePage(item.page)}><span>{item.title}</span><small>{item.page}</small></button>)}{!outline.length && <p>尚未从教材书签建立目录。</p>}</div>}
+      {sidebarMode === 'pages' ? <div className="thumbnail-list" ref={thumbnailListRef}>{Array.from({length: pdf.numPages}, (_, index) => <PdfThumbnail key={index + 1} pdf={pdf} pageNumber={index + 1} current={pageNumber === index + 1} marked={highlights.some(item => item.page_number === index + 1 && item.rects.length === 0)} scrollRoot={thumbnailListRef} onSelect={changePage} onToggleMark={page => void togglePageMark(page)}/>)}</div> : <div className="side-outline-list"><button onClick={()=>setOutlineEditorOpen(true)}>{outline.length ? '编辑 / 校对目录' : 'AI生成 / 人工编写目录'}</button>{outline.map((item, index) => <button key={`${item.title}-${index}`} style={{paddingLeft: `${12 + item.depth * 14}px`}} aria-current={item.page === pageNumber ? 'page' : undefined} onClick={() => changePage(item.page)}><span>{item.title}</span><small>{item.page}</small></button>)}{!outline.length && <p>原文没有电子目录，可用AI生成草稿并人工校对。</p>}</div>}
     </aside>}
     {pdf && <ReaderSummaries key={document.id} active={sidebarMode === 'summary'} page={pageNumber} summaries={chapterSummaries} onClose={() => setSidebarMode(null)} onPages={() => setSidebarMode('pages')} onOutline={() => setSidebarMode('outline')} onJump={page => {setSummaryReturn(true); changePage(page); setSidebarMode(null);}}/>}
     {notePanelOpen && <aside className="reader-note-panel" aria-label="页边便签">

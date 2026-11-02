@@ -76,3 +76,10 @@ RetrievalService负责模型管理、选择回滚和向量回填/重建；Reposi
 单书备份见book_backup.py与backup路由：独立ZIP格式，白名单逐表导出该书数据；导入独占HTTP维护租约，拒绝同书在途后台任务，通过SQLite单事务重映射标识、恢复FTS及兼容向量，失败清理新PDF并回滚。相同PDF替换前保存单书快照，其他书不变。
 
 旧版兼容由compatibility.py执行幂等章节关联转换；数据库初始化与备份预检接入，整库先在staging迁移校验并丢弃可重建FTS，运行库初始化补回。单书仅转换本书、补缺少的已知表和索引，不修改其他书。全库恢复在新仓库初始化失败时从安全快照回滚。
+
+
+## 统一目录与校对（2026-11-02）
+
+routes/outline.py与document_outline.py统一解析已保存document_outlines或原PDF书签。GET返回目录、来源、总页数与内容修订hash；POST generate仅在无目录时读取缓存OCR/原生文字，保留前20页及全书各页开头（最多3000页、有限字符），单次模型调用、180秒超时，返回校对草稿而不写库。PUT保存校验标题、实际页码、顺序、层级和expected_revision，复用import_learning_structure保留历史总结及范围键规则。BackgroundTaskManager.edit_book持有提交锁，目录保存/导入与同书在途任务互斥，避免暂停请求后仍写入的分块冲突。
+
+features/outline/OutlineEditor提供模型选择、原文/OCR准备进度与取消、可编辑草稿及延迟加载PDF原文预览；已存在目录不触发生成。pdfOutline与PdfReader使用同一GET接口，无旧目录缓存；总览保存时递增请求代次避免迟到读取覆盖编辑结果。当前文档接入仍限PDF，不增加其他文件格式解析器。

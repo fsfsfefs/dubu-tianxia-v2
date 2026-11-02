@@ -187,3 +187,12 @@ class ProfileTestInput(BaseModel):
     api_key: str | None = None
     temperature: float = 0.2
     max_tokens: int = 2048
+
+
+class OutlineGenerateInput(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=100)
+
+
+class OutlineSaveInput(BaseModel):
+    outline: list[OutlineEntryInput] = Field(min_length=1, max_length=1000)
+    expected_revision: str = Field(min_length=64, max_length=64)

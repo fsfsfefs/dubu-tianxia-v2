@@ -455,3 +455,15 @@ export async function importBookBackup(file: File, replaceExisting = false): Pro
   const body = new FormData(); body.append('file', file); body.append('replace_existing', String(replaceExisting));
   return json(await bookBackupRequest('/api/backup/book', {method: 'POST', body}));
 }
+
+
+export type DocumentOutline = {outline: ImportedOutlineEntry[]; source: string; page_count: number; revision: string; generated?: boolean; message?: string; unreadable_pages?: number};
+export async function getDocumentOutline(documentId: string, signal?: AbortSignal): Promise<DocumentOutline> {
+  return json<DocumentOutline>(await fetch(`/api/documents/${documentId}/outline`, {signal}));
+}
+export async function generateDocumentOutline(documentId: string, profileId: string, signal?: AbortSignal): Promise<DocumentOutline> {
+  return json<DocumentOutline>(await fetch(`/api/documents/${documentId}/outline/generate`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile_id:profileId}),signal}));
+}
+export async function saveDocumentOutline(documentId: string, outline: ImportedOutlineEntry[], revision: string, signal?: AbortSignal): Promise<DocumentOutline> {
+  return json<DocumentOutline>(await fetch(`/api/documents/${documentId}/outline`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({outline,expected_revision:revision}),signal}));
+}

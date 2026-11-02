@@ -25,6 +25,10 @@ for text in ['NATIVE READER SEARCH TEST', 'SECOND PAGE SEARCH TARGET']:
     page[NameObject('/Contents')] = writer._add_object(stream)
 output=BytesIO();writer.write(output)
 repo.add_document('E2E Native.pdf', output.getvalue())
+writer.add_outline_item('Original chapter',0)
+writer.add_outline_item('Original section',1)
+output=BytesIO();writer.write(output)
+repo.add_document('E2E Bookmarks.pdf',output.getvalue())
 image=Image.new('RGB',(1240,1754),'white');draw=ImageDraw.Draw(image)
 font_path=next((path for path in [Path('C:/Windows/Fonts/arial.ttf'),Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')] if path.exists()),None)
 assert font_path, 'A scalable test font is required'

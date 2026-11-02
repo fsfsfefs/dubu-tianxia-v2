@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from contextlib import contextmanager
 
 from .summary_tasks import run_summary, SummaryStopped, SummaryPacer
 from .providers import provider_error_message
@@ -48,6 +49,14 @@ class BackgroundTaskManager:
                 except LookupError:
                     continue
             return False
+
+    @contextmanager
+    def edit_book(self, document_id: str):
+        # Serialize edits with task submission and other edits, including paused in-flight work.
+        with self._lock:
+            if self.book_busy(document_id):
+                raise RuntimeError("本书仍有后台任务在处理，请暂停并等待当前分块结束后保存目录。")
+            yield
 
     def list(self) -> list[dict]:
         return self.repository.list_background_tasks()
