@@ -317,7 +317,7 @@ export async function testProfile(profileId: string): Promise<{ok: boolean; resp
 
 export type RestoreReport = {
   ok: boolean; created_at: string; counts: Record<string, number>; safety_backup: string;
-  credentials_restored: boolean; message: string;
+  credentials_restored: boolean; compatibility?: {chapters_upgraded?: number; historical_records?: number; outlines_recovered?: number}; message: string;
 };
 
 export async function downloadFullBackup(): Promise<{blob: Blob; filename: string}> {

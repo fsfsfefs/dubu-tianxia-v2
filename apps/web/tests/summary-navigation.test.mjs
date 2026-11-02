@@ -30,7 +30,7 @@ test('invalid page ranges stay text and returning highlights preserve page butto
 });
 
 test('reader summary selection and scroll survive jumping to PDF and returning',()=>{
- const summaries=[{chapter_key:'A:one',title:'第一章',start_page:1,end_page:1,depth:0,content:'本章内容 PDF2'},{chapter_key:'A:two',title:'第二章',start_page:2,end_page:2,depth:0,content:'另一章 PDF1'}];
+ const summaries=[{chapter_key:'A:ch-one',title:'第一章',start_page:1,end_page:1,depth:0,content:'本章内容 PDF2'},{chapter_key:'A:ch-two',title:'第二章',start_page:2,end_page:2,depth:0,content:'另一章 PDF1'}];
  const calls=[];
  const ui=render(React.createElement(ReaderSummaries,{active:true,page:1,summaries,onJump:p=>calls.push(p),onClose(){},onPages(){},onOutline(){}}));
  const scroller=ui.container.querySelector('.reader-summary-content');scroller.scrollTop=250;
@@ -39,9 +39,18 @@ test('reader summary selection and scroll survive jumping to PDF and returning',
  const props={summaries,onJump(){},onClose(){},onPages(){},onOutline(){}};
  ui.rerender(React.createElement(ReaderSummaries,{...props,active:false,page:2}));
  ui.rerender(React.createElement(ReaderSummaries,{...props,active:true,page:2}));
- assert.equal(ui.getByLabelText('查看章节总结').value,'A:one');
+ assert.equal(ui.getByLabelText('查看章节总结').value,'A:ch-one');
  assert.equal(ui.container.querySelector('.reader-summary-content').scrollTop,250);
  fireEvent.click(ui.getByRole('button',{name:'查看本页章节'}));
- assert.equal(ui.getByLabelText('查看章节总结').value,'A:two');
+ assert.equal(ui.getByLabelText('查看章节总结').value,'A:ch-two');
 });
 
+
+test('unmatched legacy summaries remain readable without claiming they belong to the current chapter',()=>{
+ const summaries=[{chapter_key:'legacy:A:0',title:'旧目录章节',start_page:1,end_page:2,depth:0,content:'历史内容 PDF2'}];
+ const ui=render(React.createElement(ReaderSummaries,{active:true,page:1,summaries,onJump(){},onClose(){},onPages(){},onOutline(){}}));
+ assert.match(ui.getByLabelText('查看章节总结').textContent,/历史总结/);
+ assert.match(ui.getByRole('status').textContent,/尚未可靠匹配/);
+ assert.equal(ui.getByRole('button',{name:'查看本页章节'}).disabled,true);
+ assert.ok(ui.getByRole('button',{name:'查看原PDF第2页：PDF2'}));
+});

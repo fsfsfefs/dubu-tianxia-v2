@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from ..migrations import migrate
+from ..compatibility import normalize_legacy_chapters
 
 
 class ManagedConnection(sqlite3.Connection):
@@ -25,6 +26,7 @@ class DatabaseRepository:
         with self.connect() as connection:
             migrate(connection)
             self._initialize_rag_index(connection)
+            self.compatibility_report = normalize_legacy_chapters(connection, self.documents_dir)
 
 
 

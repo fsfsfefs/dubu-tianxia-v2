@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .domain import ModelProfile
+from .compatibility import normalize_legacy_chapters
 
 FORMAT = "reader-next-book-backup"
 TABLES = ("notes", "chat_messages", "reading_positions", "highlights", "flashcards",
@@ -89,8 +90,10 @@ def inspect_book_backup(path, staging):
             if target.stat().st_size != info.get("size") or digest(target) != info.get("sha256"):
                 raise ValueError("单书备份校验失败。")
     data = json.loads((staging / "book.json").read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or set(data.get("tables", {})) != set(TABLES):
+    if not isinstance(data, dict) or not isinstance(data.get("tables"), dict) or set(data["tables"]) - set(TABLES):
         raise ValueError("单书数据表清单无效。")
+    for table in TABLES:
+        data["tables"].setdefault(table, [])
     document = data["document"]
     if not isinstance(document.get("id"), str) or not document["id"] or not isinstance(document.get("title"), str):
         raise ValueError("教材信息无效。")
@@ -123,8 +126,10 @@ def _remap_result(value, old, new, profiles):
                 result[key] = profiles.get(item, item)
             elif key == "document_id" and item == old:
                 result[key] = new
-            elif key == "chapter_key" and isinstance(item, str) and item.startswith(old + ":"):
-                result[key] = new + item[len(old):]
+            elif key == "chapter_key" and isinstance(item, str) and item.removeprefix("legacy:").startswith(old + ":"):
+                prefix = "legacy:" if item.startswith("legacy:") else ""
+                plain = item.removeprefix(prefix)
+                result[key] = prefix + new + plain[len(old):]
             else:
                 result[key] = _remap_result(item, old, new, profiles)
         return result
@@ -184,7 +189,7 @@ def install_book_backup(repo, data, pdf, *, replace_existing=False):
             else:
                 _insert(connection, "documents", {"id": document_id, "filename": filename, "title": source["title"],
                     "sha256": source["sha256"], "byte_size": source["byte_size"], "folder_id": folder_id,
-                    "created_at": source["created_at"]})
+                    "created_at": source.get("created_at", datetime.now(timezone.utc).isoformat())})
             for table in TABLES:
                 for original in data["tables"][table]:
                     row = dict(original)
@@ -193,19 +198,27 @@ def install_book_backup(repo, data, pdf, *, replace_existing=False):
                         row["id"] = str(uuid4())
                     if "chapter_key" in row:
                         key = row["chapter_key"]
-                        if not isinstance(key, str) or not key.startswith(source["id"] + ":"):
+                        prefix = "legacy:" if isinstance(key, str) and key.startswith("legacy:") else ""
+                        plain = key.removeprefix(prefix) if isinstance(key, str) else ""
+                        if not plain.startswith(source["id"] + ":"):
                             raise ValueError("章节标识与教材不匹配。")
-                        row["chapter_key"] = document_id + key[len(source["id"]):]
+                        row["chapter_key"] = prefix + document_id + plain[len(source["id"]):]
                     if table == "background_tasks":
-                        row["result_json"] = json.dumps(_remap_result(json.loads(row["result_json"]), source["id"], document_id, profiles), ensure_ascii=False)
+                        row["result_json"] = json.dumps(_remap_result(json.loads(row.get("result_json", "{}")), source["id"], document_id, profiles), ensure_ascii=False)
                         if row["status"] in {"queued", "running", "cancelling", "paused"}:
                             row.update(status="paused", cancel_requested=1, message="从单书备份导入，已暂停；确认模型配置后重新执行。")
-                    if table == "rag_chunks" and row["embedding"] is not None:
+                    if table == "rag_chunks" and row.get("embedding") is not None:
                         row["embedding"] = base64.b64decode(row["embedding"], validate=True)
                     _insert(connection, table, row)
                     if table == "rag_chunks" and repo.rag_fts_available:
                         connection.execute("INSERT INTO rag_chunks_fts(chunk_id,document_id,page_number,content) VALUES (?,?,?,?)",
                                            (row["id"], document_id, row["page_number"], row["content"]))
+            missing_pages = connection.execute("""SELECT page_number,text FROM ocr_pages p WHERE document_id=?
+                AND NOT EXISTS (SELECT 1 FROM rag_chunks r WHERE r.document_id=p.document_id AND r.page_number=p.page_number)""", (document_id,)).fetchall()
+            for page in missing_pages:
+                if page["text"].strip():
+                    repo._replace_rag_page(connection, document_id, page["page_number"], page["text"])
+            compatibility = normalize_legacy_chapters(connection, repo.documents_dir, {document_id})
             # Recompute only this book's incompatible vectors using the current local model.
             rows = connection.execute("SELECT id,content FROM rag_chunks WHERE document_id=? AND (embedding IS NULL OR embedding_model IS NULL OR embedding_model!=?)",
                                       (document_id, repo.embedding_models.active_key)).fetchall()
@@ -216,7 +229,7 @@ def install_book_backup(repo, data, pdf, *, replace_existing=False):
         if created_file:
             target.unlink(missing_ok=True)
         raise
-    return {"document_id": document_id, "replaced": bool(existing), "safety_backup": safety.name if safety else None,
+    return {"compatibility": compatibility, "document_id": document_id, "replaced": bool(existing), "safety_backup": safety.name if safety else None,
             "summary_profile_id": profiles.get(data.get("summary_profile_id")),
             "counts": {table: len(rows) for table, rows in data["tables"].items()},
             "message": "单书全部学习数据已导入。API Key与共享模型文件不包含在包内；导入的未结束任务保持暂停。"}

@@ -2,6 +2,8 @@
 
 当前项目目录：`D:\dubutianxian完善`。
 
+2026-11-02：compatibility.py支持项目v1完整ZIP与历史格式1单书数据升级；完整ZIP先在staging校验迁移，旧序号章节按目录保守匹配，冲突/不明归属留作历史，FTS补建与本地导入模型路径重定位。全库恢复后初始化失败自动回滚，兼容过程不调用聊天模型。
+
 2026-11-02：SummaryContent支持PDF引用按钮，通过useOverview保留总结返回锚点；PdfReader的ReaderSummaries面板显示已有总结，保持跳页返回状态。显式跳页对齐页首，尾页按视口补足滚动空间，不改变普通阅读页内恢复。
 
 2026-11-02：单书完整ZIP迁移由book_backup.py提供，书架导出/导入；相同PDF仅替换该书，先存backups单书安全快照，拒绝同书在途任务。导入事务重映射身份并恢复检索，不携带密钥与共享模型文件。详见features与user-guide。

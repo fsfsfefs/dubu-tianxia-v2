@@ -308,7 +308,7 @@ export function App() {
     setBackupBusy(true); setError('');
     try {
       const report = await restoreFullBackup(file);
-      window.alert(`恢复完成。${report.message}\n已恢复 ${report.counts.documents || 0} 本教材、${report.counts.notes || 0} 条笔记、${report.counts.highlights || 0} 条高亮。\n恢复前快照：${report.safety_backup}`);
+      window.alert(`恢复完成。${report.message}\n自动兼容：${report.compatibility?.chapters_upgraded || 0}处章节标识升级，${report.compatibility?.historical_records || 0}处保留为历史。\n已恢复 ${report.counts.documents || 0} 本教材、${report.counts.notes || 0} 条笔记、${report.counts.highlights || 0} 条高亮。\n恢复前快照：${report.safety_backup}`);
       window.location.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : '完整备份恢复失败'); }
     finally { setBackupBusy(false); if (backupInput.current) backupInput.current.value = ''; }

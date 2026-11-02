@@ -10,6 +10,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from .compatibility import upgrade_staged_database
 
 
 FORMAT = "reader-next-full-backup"
@@ -95,11 +96,13 @@ def inspect_backup(archive_path: Path, staging_root: Path) -> dict:
         if total_size > MAX_EXPANDED_BYTES:
             raise ValueError("备份解压后超过 24GB 安全限制。")
         names = {entry.filename for entry in entries}
+        if len(names) != len(entries):
+            raise ValueError("备份含有重复文件条目。")
         if "manifest.json" not in names or "database/reader.db" not in names:
             raise ValueError("不是有效的 Reader Next 完整备份。")
         for entry in entries:
             path = Path(entry.filename)
-            if path.is_absolute() or ".." in path.parts:
+            if path.is_absolute() or ".." in path.parts or "\\" in entry.filename or ":" in entry.filename:
                 raise ValueError("备份包含不安全路径。")
         try:
             manifest = json.loads(archive.read("manifest.json"))
@@ -108,6 +111,15 @@ def inspect_backup(archive_path: Path, staging_root: Path) -> dict:
         if manifest.get("format") != FORMAT or manifest.get("version") != VERSION:
             raise ValueError("备份格式或版本不受支持。")
 
+        listed = manifest.get("files")
+        if not isinstance(listed, list) or any(not isinstance(item, dict) or not isinstance(item.get("path"), str) for item in listed):
+            raise ValueError("备份清单缺少有效校验信息。")
+        paths = [item["path"] for item in listed]
+        files = {entry.filename for entry in entries if not entry.is_dir() and entry.filename != "manifest.json"}
+        if len(set(paths)) != len(paths) or set(paths) != files:
+            raise ValueError("备份实际文件与校验清单不一致。")
+        if any(not (name == "database/reader.db" or name == "embedding-models.json" or name.startswith("documents/") or name.startswith("embedding-models/")) for name in paths):
+            raise ValueError("备份包含不支持的数据文件。")
         staging_root.mkdir(parents=True, exist_ok=False)
         archive.extractall(staging_root)
 
@@ -120,6 +132,7 @@ def inspect_backup(archive_path: Path, staging_root: Path) -> dict:
         target = staging_root / item["path"]
         if not target.is_file() or target.stat().st_size != item.get("size") or _sha256(target) != item.get("sha256"):
             raise ValueError(f"备份文件校验失败：{item.get('path', '未知文件')}")
+    manifest["compatibility"] = upgrade_staged_database(staging_root)
     return manifest
 
 

@@ -53,7 +53,7 @@ def create_router(runtime: Runtime) -> APIRouter:
                     destination.write(chunk)
             manifest = await asyncio.to_thread(inspect_backup, upload_path, staging_path)
             counts, safety = await asyncio.to_thread(runtime.restore, staging_path, safety_path)
-            return {'ok': True, 'created_at': manifest.get('created_at'), 'counts': counts, 'safety_backup': safety_path.name, 'credentials_restored': False, 'message': '完整备份已恢复。API Key 出于安全原因未包含在备份中，请按需重新填写。'}
+            return {'ok': True, 'created_at': manifest.get('created_at'), 'counts': counts, 'safety_backup': safety_path.name, 'credentials_restored': False, 'compatibility': manifest.get('compatibility', {}), 'message': '完整备份已恢复并自动完成旧版兼容升级；无法确认归属的总结保留为历史，可在PDF章节总结面板查看。API Key 出于安全原因未包含在备份中，请按需重新填写。'}
         except HTTPException:
             raise
         except (ValueError, zipfile.BadZipFile) as error:

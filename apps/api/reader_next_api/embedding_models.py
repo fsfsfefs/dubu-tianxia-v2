@@ -53,6 +53,17 @@ class EmbeddingModelManager:
             if isinstance(payload, dict):
                 payload.setdefault("active_id", BUILTIN_ID)
                 payload.setdefault("models", [])
+                for model in payload["models"]:
+                    if not isinstance(model, dict) or not model.get("local_path"):
+                        continue
+                    parts = str(model["local_path"]).replace("\\", "/").split("/")
+                    markers = [i for i, part in enumerate(parts) if part.lower() == "embedding-models"]
+                    if markers:
+                        suffix = parts[markers[-1] + 1:]
+                        if suffix and ".." not in suffix and all(":" not in part for part in suffix):
+                            candidate = self.models_dir.joinpath(*suffix).resolve()
+                            if self.models_dir.resolve() in candidate.parents and candidate.is_dir():
+                                model["local_path"] = str(candidate)
                 return payload
         except (OSError, ValueError):
             pass

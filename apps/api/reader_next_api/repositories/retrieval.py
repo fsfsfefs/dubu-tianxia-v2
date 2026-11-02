@@ -31,6 +31,10 @@ class RetrievalRepository:
                    )"""
             )
             self.rag_fts_available = True
+            connection.execute("DELETE FROM rag_chunks_fts WHERE chunk_id IS NULL OR chunk_id NOT IN (SELECT id FROM rag_chunks)")
+            connection.execute("""INSERT INTO rag_chunks_fts(chunk_id,document_id,page_number,content)
+                SELECT id,document_id,page_number,content FROM rag_chunks
+                WHERE id NOT IN (SELECT chunk_id FROM rag_chunks_fts)""")
         except sqlite3.OperationalError:
             self.rag_fts_available = False
 
