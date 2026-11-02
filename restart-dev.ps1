@@ -29,6 +29,7 @@ foreach ($file in @($apiPython, $viteScript, $nodePath)) {
         throw "缺少启动依赖：$file。请先安装项目依赖。"
     }
 }
+. (Join-Path $projectRoot 'scripts\windows-process-directory.ps1')
 if ($ValidateOnly) {
     Write-Host "Node.js：$nodePath"
     Write-Host '启动脚本与本地依赖检查通过（未停止或启动任何服务）。'
@@ -48,6 +49,15 @@ function Test-ProjectService([int]$ProcessId, [string]$Kind) {
     $command = [string]$process.CommandLine
     if ($Kind -eq 'api' -and $command -notmatch 'uvicorn\s+reader_next_api\.main:app') { return $false }
     if ($Kind -eq 'web' -and $command -notmatch '(?i)\bvite(?:\.js)?\b') { return $false }
+    # Older launches used a relative Vite script and a detached parent. Verify the
+    # actual working directory, instead of treating every node/Vite process as ours.
+    $relativeVite = '(?i)(?:^|\s)"?(?:\.[\\/])?node_modules[\\/]vite[\\/]bin[\\/]vite\.js"?(?:\s|$)'
+    if ($Kind -eq 'web' -and [IO.Path]::GetFileName([string]$process.ExecutablePath) -ieq 'node.exe' -and $command -match $relativeVite) {
+        $workingDirectory = [ReaderProcessDirectory]::GetWorkingDirectory($ProcessId)
+        if ($workingDirectory -and [IO.Path]::GetFullPath($workingDirectory).TrimEnd('\') -ieq $webRoot.TrimEnd('\')) {
+            return $true
+        }
+    }
     # Check a bounded parent chain: Windows venv launchers may use the base Python executable.
     for ($level = 0; $process -and $level -lt 5; $level++) {
         $command = ([string]$process.CommandLine).Replace('/', '\')
@@ -68,7 +78,7 @@ $toStop = @()
 foreach ($service in $services) {
     foreach ($listenerId in @(Get-ListenerIds $service.Port)) {
         if (-not (Test-ProjectService $listenerId $service.Kind)) {
-            throw "端口 $($service.Port) 被其他程序占用，未停止任何服务。请先检查该程序。"
+            throw "端口 $($service.Port) 无法确认属于本项目（PID $listenerId），未停止任何服务。请先检查该程序。"
         }
         $toStop += @{ Id = $listenerId; Kind = $service.Kind }
     }
