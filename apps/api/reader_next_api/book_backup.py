@@ -15,7 +15,7 @@ from .compatibility import normalize_legacy_chapters
 from .note_images import MAX_NOTE_IMAGES, validate_note_image
 
 FORMAT = "reader-next-book-backup"
-TABLES = ("notes", "note_images", "chat_messages", "reading_positions", "highlights", "flashcards",
+TABLES = ("notes", "note_images", "chat_messages", "saved_chats", "reading_positions", "highlights", "flashcards",
           "ocr_pages", "summary_gaps", "summary_checkpoints", "chapter_summaries",
           "document_outlines", "background_tasks", "rag_chunks")
 MAX_ARCHIVE = 1024 * 1024 * 1024
@@ -48,6 +48,7 @@ def create_book_backup(repo, document_id, destination, *, summary_profile_id=Non
             image_payloads[name]=row.pop("data")
             row["data_file"]=name
         if not image_payloads:tables.pop("note_images")
+        if not tables["saved_chats"]:tables.pop("saved_chats")
         profile_ids = set()
         for row in tables["background_tasks"]:
             profile_id = json.loads(row["result_json"]).get("summary_request", {}).get("profile_id")
@@ -64,7 +65,7 @@ def create_book_backup(repo, document_id, destination, *, summary_profile_id=Non
     pdf = repo.document_path(document_id)
     if len(raw) > LIMITS["book.json"] or pdf.stat().st_size > LIMITS["document.pdf"]:
         raise ValueError("单书备份超过限制（PDF512MB，学习数据128MB）。")
-    manifest = {"format": FORMAT, "version": 2 if image_payloads else 1, "credentials_included": False, "shared_models_included": False, "created_at": datetime.now(timezone.utc).isoformat(),
+    manifest = {"format": FORMAT, "version": 3 if tables.get("saved_chats") else 2 if image_payloads else 1, "credentials_included": False, "shared_models_included": False, "created_at": datetime.now(timezone.utc).isoformat(),
                 "files": {"book.json": {"size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()},
                           "document.pdf": {"size": pdf.stat().st_size, "sha256": digest(pdf)}}}
     for name,content in image_payloads.items():
@@ -93,7 +94,7 @@ def inspect_book_backup(path, staging):
             if entry.file_size > LIMITS.get(entry.filename,MAX_NOTE_IMAGES) or entry.flag_bits & 1:
                 raise ValueError("备份文件过大或已加密。")
         manifest = json.loads(archive.read("manifest.json"))
-        if manifest.get("format") != FORMAT or manifest.get("version") not in {1,2}:
+        if manifest.get("format") != FORMAT or manifest.get("version") not in {1,2,3}:
             raise ValueError("请选择受支持的单书完整备份ZIP。")
         if set(manifest.get("files", {})) != names - {"manifest.json"}:
             raise ValueError("备份清单无效。")

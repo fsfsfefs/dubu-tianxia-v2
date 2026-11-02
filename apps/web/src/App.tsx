@@ -77,12 +77,12 @@ export function App() {
   const overview = useOverview({activeDocument, activeProfile, profiles, currentPage, screen, backgroundTasks, setBackgroundTasks, setTaskCenterOpen, setError, notes, flashcards,
     enterReader: (...args) => enterReader(...args), goBack: () => goBack(), refreshTasksNow: () => refreshTasksNow(), cancelTask: id => cancelTask(id)});
   const {chapterSummaries, setChapterSummaries, chapterSummaryProgress, sourceTrace, setSourceTrace, bookGenerationTask, returnToSelectedSummary, cancelBookStructure} = overview;
-  const conversation = useConversation({
+  const conversation = useConversation({saveChats:true,
       activeDocument, documents, activeProfile, profiles, excerpt, currentPage, chapterSummaries,
       master: panelMode === 'master', includeCurrentExcerpt, multiBookMode, selectedBookIds, useWebVerification,
       deepAnswer, busy, setBusy, setError, onNoteSaved: note => setNotes(items => [note, ...items]),
     });
-  const {setQuestion, setMessages} = conversation;
+  const {setQuestion} = conversation;
   const layout = usePanelLayout();
   const {assistantWidth, resizePanelByKeyboard, beginPanelResize} = layout;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -122,8 +122,8 @@ export function App() {
   }, [activeDocument?.id]);
 
   useDocumentLearningData(activeDocument?.id, {
-    reset: () => {setMessages([]); setNotes([]); setFlashcards([]); setChapterSummaries([]);},
-    loaded: data => {setMessages(data.history); setNotes(data.notes); setFlashcards(data.flashcards); setChapterSummaries(data.summaries);},
+    reset: () => { setNotes([]); setFlashcards([]); setChapterSummaries([]);},
+    loaded: data => { setNotes(data.notes); setFlashcards(data.flashcards); setChapterSummaries(data.summaries);},
     error: setError,
   });
   useEffect(() => {

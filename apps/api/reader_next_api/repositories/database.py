@@ -38,7 +38,7 @@ class DatabaseRepository:
 
 
     def export_data(self) -> dict:
-        tables = ["folders", "documents", "model_profiles", "notes", "chat_messages", "reading_positions", "highlights", "flashcards", "ocr_pages", "summary_gaps", "summary_checkpoints", "chapter_summaries", "document_outlines", "rag_chunks"]
+        tables = ["folders", "documents", "model_profiles", "notes", "chat_messages", "saved_chats", "reading_positions", "highlights", "flashcards", "ocr_pages", "summary_gaps", "summary_checkpoints", "chapter_summaries", "document_outlines", "rag_chunks"]
         with self.connect() as connection:
             result = {table: [dict(row) for row in connection.execute(f"SELECT * FROM {table}").fetchall()] for table in tables}
         for item in result["highlights"]:

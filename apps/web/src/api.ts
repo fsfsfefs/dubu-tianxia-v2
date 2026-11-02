@@ -489,3 +489,8 @@ export async function renameInkMark(documentId:string,memberIds:string[],regionI
 export async function deleteInkMark(documentId:string,memberIds:string[],regionId:string):Promise<{deleted_ids:string[];removed:Highlight[]}>{
  return (await json<{deleted_ids:string[];removed:Highlight[]}>(await fetch(`/api/documents/${documentId}/ink-marks`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({member_ids:memberIds,region_id:regionId})})));
 }
+
+
+export type SavedChat={id:string;document_id:string;title:string;kind:'chat'|'master';messages:{role:'user'|'assistant';content:string}[];revision:number};
+export async function listSavedChats(doc:string):Promise<SavedChat[]>{return (await json<{chats:SavedChat[]}>(await fetch(`/api/documents/${doc}/saved-chats`))).chats;}
+export async function writeSavedChat(doc:string,data:Omit<SavedChat,'id'|'document_id'>,id?:string):Promise<SavedChat>{return (await json<{chat:SavedChat}>(await fetch(`/api/documents/${doc}/saved-chats${id?'/'+encodeURIComponent(id):''}`,{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}))).chat;}

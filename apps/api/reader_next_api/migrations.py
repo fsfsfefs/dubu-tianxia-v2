@@ -210,7 +210,15 @@ def _note_images(connection):
     connection.execute("CREATE INDEX IF NOT EXISTS note_images_note ON note_images(document_id,note_id)")
 
 
-MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images))
+def _saved_chats(connection):
+    connection.execute("""CREATE TABLE IF NOT EXISTS saved_chats (
+      id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      title TEXT NOT NULL, kind TEXT NOT NULL, messages_json TEXT NOT NULL DEFAULT '[]',
+      revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+
+
+MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images), (4, 'saved chats', _saved_chats))
 
 
 def migrate(connection, migrations=MIGRATIONS):

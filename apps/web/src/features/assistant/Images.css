@@ -5,3 +5,10 @@
 .original-assistant .excerpt-image-list figure{margin:0;width:112px;min-width:0}
 .original-assistant .excerpt-image-list img{width:112px;height:84px;object-fit:contain;background:#fff;border:1px solid var(--line)}
 .original-assistant .excerpt-image-list figcaption{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+
+.saved-chat-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.saved-chat-toolbar select{flex:1;min-width:100px;max-width:100%;padding:7px;background:var(--paper-strong);color:var(--ink);border:1px solid var(--line)}
+.saved-chat-toolbar button{padding:7px;border:1px solid var(--line);background:var(--paper-strong);color:var(--green)}
+.saved-chat-toolbar small{color:var(--muted)}
+.original-assistant .composer{grid-template-columns:40px minmax(0,1fr) auto}
+.original-assistant .composer .composer-attach{align-self:end;min-width:36px;height:36px;padding:0;border-radius:50%;font-size:25px;line-height:1;background:var(--paper-strong);color:var(--green);border:1px solid var(--line)}

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
 from .runtime import Runtime, MaintenanceBusy
-from .routes import assets, documents, learning, models, tasks, chat, backup, outline
+from .routes import assets, documents, learning, models, tasks, chat, backup, outline, saved_chats
 
 
 class MaintenanceMiddleware:
@@ -50,6 +50,6 @@ def create_app(data_root=None, *, runtime=None):
     app.add_middleware(MaintenanceMiddleware, runtime=runtime)
     app.add_middleware(CORSMiddleware, allow_origins=['http://127.0.0.1:5174', 'http://localhost:5174'],
                        allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
-    for module in (assets, documents, learning, models, tasks, chat, backup, outline):
+    for module in (assets, documents, learning, models, tasks, chat, backup, outline, saved_chats):
         app.include_router(module.create_router(runtime))
     return app

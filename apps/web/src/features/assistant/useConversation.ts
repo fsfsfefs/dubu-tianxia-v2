@@ -2,7 +2,7 @@ import {useAutoDismiss} from '../../useAutoDismiss';
 import {useEffect, useRef, useState} from 'react';
 import type {Dispatch, SetStateAction} from 'react';
 import {
-  clearChatMessages, createNote, streamAnswer,
+  clearChatMessages, createNote, streamAnswer, listSavedChats, writeSavedChat, type SavedChat,
   type AgentProgress, type ChapterSummary, type ChatMessage, type CitationVerification,
   type DocumentRecord, type ModelProfile, type Note, type RagSource, type RagStatus, type WebSource,
 } from '../../api';
@@ -11,7 +11,7 @@ import {useDocumentScope} from '../../shared/useDocumentScope';
 
 type Message = Pick<ChatMessage, 'role' | 'content'> & {requestId?: symbol};
 type Options = {
-  activeDocument: DocumentRecord | null; documents: DocumentRecord[]; activeProfile: string; profiles: ModelProfile[];
+  saveChats?: boolean; activeDocument: DocumentRecord | null; documents: DocumentRecord[]; activeProfile: string; profiles: ModelProfile[];
   excerpt: string; currentPage: number; chapterSummaries: ChapterSummary[]; master: boolean;
   includeCurrentExcerpt: boolean; multiBookMode: boolean; selectedBookIds: string[];
   useWebVerification: boolean; deepAnswer: boolean; busy: boolean;
@@ -78,7 +78,69 @@ export function useConversation(options: Options, dependencies: Dependencies = d
     return () => {request.current?.controller.abort(); request.current = null;};
   }, [activeDocument?.id]);
 
+  const [chats,setChats]=useState<SavedChat[]>([]),[chatReady,setChatReady]=useState(!options.saveChats),[chatWorking,setChatWorking]=useState(false),[chatNotice,setChatNotice]=useState('');
+  const selectedChat=useRef<SavedChat|null>(null),chatVisit=useRef<object>({}),savedText=useRef(''),saveQueue=useRef<Promise<unknown>>(Promise.resolve());
+  const kind=master?'master':'chat';
+  const visibleMessages=master?messages:assistantMessages;
+  const signature=(items:Message[])=>JSON.stringify(items.map(({role,content})=>({role,content})));
+  const activateChat=(chat:SavedChat)=>{
+    selectedChat.current=chat;savedText.current=signature(chat.messages);imageRead.current=null;setImageBusy(false);
+    (master?setMessages:setAssistantMessages)(chat.messages);setImages([]);setQuestion('');resetEvidence();setChatNotice('');
+  };
+  useEffect(()=>{
+    if(!options.saveChats)return;
+    const visit={};chatVisit.current=visit;selectedChat.current=null;setChatReady(false);setChatWorking(false);setChats([]);setChatNotice('');request.current?.controller.abort();request.current=null;setBusy(false);
+    if(!activeDocument)return;
+    const doc=activeDocument.id;
+    void listSavedChats(doc).then(async items=>{
+      if(chatVisit.current!==visit)return;
+      let chosen=items.find(item=>item.kind===kind);
+      if(!chosen){chosen=await writeSavedChat(doc,{title:'新聊天',kind,messages:[],revision:0});items=[chosen,...items];}
+      if(chatVisit.current!==visit)return;
+      setChats(items);activateChat(chosen);setChatReady(true);
+    }).catch(error=>{if(chatVisit.current===visit)setError(error.message);});
+    return ()=>{chatVisit.current={};request.current?.controller.abort();request.current=null;};
+  },[activeDocument?.id,master,options.saveChats]);
+  const saveChat=async(title?:string)=>{
+    const current=selectedChat.current,visit=chatVisit.current;
+    if(!current || !activeDocument)return;
+    const doc=activeDocument.id,items=visibleMessages.map(({role,content})=>({role,content})),text=signature(items);
+    const name=title || (current.title==='新聊天'&&items.length?items[0].content.slice(0,30)||'图片提问':current.title);
+    const operation=saveQueue.current.catch(()=>{}).then(async()=>{
+      if(chatVisit.current!==visit)return;
+      if(text===savedText.current && name===selectedChat.current?.title)return;
+      const fresh=selectedChat.current;
+      if(!fresh || fresh.id!==current.id)return;
+      const result=await writeSavedChat(doc,{title:name,kind:current.kind,messages:items,revision:fresh.revision},current.id);
+      if(chatVisit.current!==visit || selectedChat.current?.id!==current.id)return;
+      selectedChat.current=result;savedText.current=text;setChats(all=>all.map(item=>item.id===result.id?result:item));setChatNotice('已保存');
+    });
+    saveQueue.current=operation;await operation;
+  };
+  useEffect(()=>{
+    if(!options.saveChats || !chatReady || busy || chatWorking)return;
+    void saveChat().catch(error=>setError(error.message));
+  },[messages,assistantMessages,busy,chatReady,chatWorking]);
+  const changeChat=async(id?:string)=>{
+    if(!activeDocument || busy || chatWorking || !chatReady)return;
+    const visit=chatVisit.current;setChatWorking(true);
+    try{
+      await saveChat();if(chatVisit.current!==visit)return;
+      const chat=id?chats.find(item=>item.id===id):await writeSavedChat(activeDocument.id,{title:'新聊天',kind,messages:[],revision:0});
+      if(!chat || chatVisit.current!==visit)return;
+      if(!id)setChats(items=>[chat,...items]);activateChat(chat);
+    }catch(error){if(chatVisit.current===visit)setError(error instanceof Error?error.message:'聊天切换失败');}
+    finally{if(chatVisit.current===visit)setChatWorking(false);}
+  };
+  const renameChat=async()=>{
+    if(!selectedChat.current || busy || chatWorking)return;
+    const title=window.prompt('聊天名称',selectedChat.current.title)?.trim();
+    if(!title)return;
+    try{await saveChat(title);}catch(error){setError(error instanceof Error?error.message:'命名失败');}
+  };
+
   const runAsk = async (prompt: string) => {
+    if (options.saveChats && (!chatReady || chatWorking))return;
     if ((!prompt.trim() && !images.length) || !activeProfile || busy || imageBusy || imageRead.current || request.current || !activeDocument) return;
     if (includeCurrentExcerpt && !excerpt.trim() && !images.length) {setError('请选择或粘贴当前页原文，或者切换到单书全文模式。'); return;}
     const current = {controller: new AbortController(), valid: capture()};
@@ -110,7 +172,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
         profile_id: activeProfile, excerpt: context, images: images.length ? images.map(image => image.url) : undefined, question: user.content, history: conversation.slice(-12).map(({role, content}) => ({role, content})),
         page_number: includeCurrentExcerpt ? currentPage : undefined,
         use_web: !includeCurrentExcerpt && useWebVerification, use_rag: !includeCurrentExcerpt,
-        use_agent: !includeCurrentExcerpt && deepAnswer, verify_citations: !includeCurrentExcerpt, persist_history: master,
+        use_agent: !includeCurrentExcerpt && deepAnswer, verify_citations: !includeCurrentExcerpt, persist_history: options.saveChats ? false : master,
         max_tokens: includeCurrentExcerpt || deepAnswer ? undefined : Math.max(profiles.find(item => item.id === activeProfile)?.max_tokens || 2048, 8192),
       }, delta => {
         if (!accepting()) return;
@@ -149,6 +211,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
 
   const clearConversation = async () => {
     if (!activeDocument || !(master ? messages : assistantMessages).length) return;
+    if(options.saveChats){if(window.confirm('清空当前聊天内容？其他历史聊天不受影响。'))(master?setMessages:setAssistantMessages)([]);return;}
     if (!master) {setAssistantMessages([]); return;}
     if (!window.confirm('确定清空当前教材的 Master 对话记录吗？')) return;
     const valid = capture();
@@ -165,7 +228,7 @@ export function useConversation(options: Options, dependencies: Dependencies = d
       if (valid()) onNoteSaved(note);
     } catch (error) {if (valid()) setError(error instanceof Error ? error.message : '解释保存失败');}
   };
-  return {images, imageBusy, addImages, removeImage, pasteImages, question, setQuestion, messages, setMessages, assistantMessages, agentEvents, ragProgress, indexingBookTitle,
+  return {chats, chatReady, chatWorking, chatNotice, selectedChatId:selectedChat.current?.id || '', newChat:()=>changeChat(), switchChat:changeChat, saveChat:async()=>{try{await saveChat();}catch(error){setError(error instanceof Error?error.message:'保存失败');}}, renameChat, images, imageBusy, addImages, removeImage, pasteImages, question, setQuestion, messages, setMessages, assistantMessages, setAssistantMessages, agentEvents, ragProgress, indexingBookTitle,
     ragSources, ragStatus, webSources, citationVerification, verificationRunning, runAsk,
     ask: () => runAsk(question), cancelAsk, clearConversation, saveLastExplanation};
 }

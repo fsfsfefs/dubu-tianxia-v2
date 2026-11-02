@@ -5,7 +5,7 @@ import {JSDOM} from 'jsdom';
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {url: 'http://localhost/'});
 globalThis.window = dom.window; globalThis.document = dom.window.document;
 globalThis.HTMLElement = dom.window.HTMLElement; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-const {render, renderHook, fireEvent, act, cleanup} = await import('@testing-library/react');
+const {render, renderHook, fireEvent, act, cleanup, waitFor} = await import('@testing-library/react');
 const {useConversation} = await import('../.tmp/tests/features/assistant/useConversation.js');
 const {useFlashcards} = await import('../.tmp/tests/features/practice/useFlashcards.js');
 const {useDocumentLearningData} = await import('../.tmp/tests/shared/useDocumentLearningData.js');
@@ -278,4 +278,31 @@ test('folder action menu escapes clipping, names its folder and closes after act
  assert.equal(view.queryByRole('menu'),null);
  fireEvent.click(trigger);fireEvent.pointerDown(document.body);
  assert.equal(view.queryByRole('menu'),null);
+});
+
+
+test('named chats save before new chat, restore history and do not use legacy persistence',async()=>{
+ const previous=globalThis.fetch,oldPrompt=window.prompt;const records=[];let sent;
+ globalThis.fetch=async(url,options={})=>{
+  if(!String(url).includes('saved-chats'))throw Error('unexpected URL '+url);
+  if(!options.method)return {ok:true,json:async()=>({chats:records})};
+  const payload=JSON.parse(options.body);
+  const id=options.method==='POST'?'chat-'+records.length:String(url).split('/').at(-1);
+  const row={...payload,id,document_id:book.id,revision:options.method==='POST'?0:payload.revision+1};
+  const index=records.findIndex(item=>item.id===id);if(index<0)records.push(row);else records[index]=row;
+  return {ok:true,json:async()=>({chat:row})};
+ };
+ try{
+  const hook=renderHook(()=>useChat(book,{ensureIndex(){},async stream(payload,delta){sent=payload;delta('第一段回答');}},{saveChats:true}));
+  await waitFor(()=>assert.equal(hook.result.current.chatReady,true));
+  await act(async()=>{await hook.result.current.runAsk('第一段问题');});
+  await act(async()=>{await hook.result.current.saveChat();});
+  assert.equal(sent.persist_history,false);assert.equal(records[0].messages.length,2);
+  await act(async()=>{await hook.result.current.newChat();});
+  assert.equal(hook.result.current.assistantMessages.length,0);assert.equal(records.length,2);
+  window.prompt=()=> '章节讨论';await act(async()=>{await hook.result.current.renameChat();});
+  assert.equal(records[1].title,'章节讨论');
+  await act(async()=>{await hook.result.current.switchChat(records[0].id);});
+  assert.equal(hook.result.current.assistantMessages[1].content,'第一段回答');
+ }finally{globalThis.fetch=previous;window.prompt=oldPrompt;}
 });
