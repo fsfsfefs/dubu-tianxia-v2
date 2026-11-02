@@ -5,7 +5,8 @@ import json
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import ValidationError
-from ..schemas import StickyNoteInput
+from ..schemas import StickyNoteInput, InkMarkInput
+from ..ink_marks import change_ink_mark
 from ..note_images import MAX_NOTE_IMAGES
 
 from ..providers import provider_error_message
@@ -102,6 +103,21 @@ def create_router(runtime: Runtime) -> APIRouter:
             return {'summary': runtime.repository.save_chapter_summary(document_id, chapter_key, payload.title.strip(), payload.start_page, payload.end_page, payload.depth, payload.content.strip())}
         except LookupError as error:
             raise HTTPException(404, str(error)) from error
+
+    @router.put('/api/documents/{document_id}/ink-marks')
+    def rename_ink_mark(document_id: str,payload: InkMarkInput):
+        try:
+            return {"highlights":change_ink_mark(runtime.repository,document_id,payload.member_ids,payload.region_id,payload.name)}
+        except LookupError as error:raise HTTPException(404,str(error)) from error
+        except ValueError as error:raise HTTPException(422,str(error)) from error
+
+    @router.delete('/api/documents/{document_id}/ink-marks')
+    def delete_ink_mark(document_id: str,payload: InkMarkInput):
+        try:
+            removed=change_ink_mark(runtime.repository,document_id,payload.member_ids,payload.region_id)
+            return {"deleted_ids":[row["id"] for row in removed],"removed":[{**row,"rects":json.loads(row["rects_json"])} for row in removed]}
+        except LookupError as error:raise HTTPException(404,str(error)) from error
+        except ValueError as error:raise HTTPException(422,str(error)) from error
 
     @router.get('/api/documents/{document_id}/highlights')
     def document_highlights(document_id: str) -> dict:

@@ -4,6 +4,8 @@
 
 2026-11-02：便签图片20MB（单张及每便签合计）、PDF左右空白手写及getOrInsertComputed兼容修复。迁移3增加note_images，完整备份携带BLOB，有图单书格式2使用独立图片条目、重映射note_id。页边笔迹沿用highlights并标记左右surface；主线程及pdfWorker均安装按能力补丁。
 
+2026-11-02：同页同侧手写按邻近区域计为标记，可主动新建独立标记，支持列表命名/跳页/整组删除及撤销。区域身份存highlights标签，名称存text，PUT/DELETE ink-marks事务验证；工具栏收起状态本机记忆，仍可书写和结束标注。
+
 当前项目目录：`D:\dubutianxian完善`。
 
 2026-11-02：compatibility.py支持项目v1完整ZIP与历史格式1单书数据升级；完整ZIP先在staging校验迁移，旧序号章节按目录保守匹配，冲突/不明归属留作历史，FTS补建与本地导入模型路径重定位。全库恢复后初始化失败自动回滚，兼容过程不调用聊天模型。

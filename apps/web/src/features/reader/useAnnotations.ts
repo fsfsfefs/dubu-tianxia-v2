@@ -1,6 +1,7 @@
+import {buildInkMarks,inkBounds,nearby,closestMark,regionTags,type InkMark} from './inkMarks';
 import {inkSurface,surfaceTags,type InkSurface} from './inkSurface';
 import {useEffect, useRef, useState} from 'react';
-import {createHighlight, deleteHighlight, updateHighlight, type Highlight, type HighlightRect} from '../../api';
+import {createHighlight, deleteHighlight, updateHighlight, renameInkMark, deleteInkMark, type Highlight, type HighlightRect} from '../../api';
 import type {Dispatch, SetStateAction} from 'react';
 import type {AnnotationTool, AnnotationPoint, AnnotationDraft, AnnotationUndoAction, SelectionState} from '../../PdfPages';
 import {useDocumentScope} from '../../shared/useDocumentScope';
@@ -13,6 +14,9 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const capture = useDocumentScope(document.id);
   const annotationUndoStack = useRef<AnnotationUndoAction[]>([]);
   const inkQueue = useRef(Promise.resolve());
+  const activeMark = useRef<string|null>(null),forceNewMark=useRef(false);
+  const [newMarkPending,setNewMarkPending]=useState(false);
+  const startNewInkMark=()=>{activeMark.current=null;forceNewMark.current=true;setNewMarkPending(true);if(annotationTool!=='marker')setAnnotationTool('pen');};
   const currentHighlights = useRef(highlights);
   currentHighlights.current = highlights;
   const commitInk = (change: (items: Highlight[]) => Highlight[]) => {
@@ -38,7 +42,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const [editingHighlight, setEditingHighlight] = useState<string | null>(null);
   const [highlightComment, setHighlightComment] = useState('');
   const [highlightTags, setHighlightTags] = useState('');
-  useEffect(() => {annotationUndoStack.current = []; setAnnotationUndoDepth(0); setAnnotationDraft(null); setEditingHighlight(null);}, [document.id]);
+  useEffect(() => {activeMark.current=null;forceNewMark.current=false;setNewMarkPending(false);annotationUndoStack.current = []; setAnnotationUndoDepth(0); setAnnotationDraft(null); setEditingHighlight(null);}, [document.id]);
   const saveTextHighlight = async (selection: SelectionState, onSaved: () => void) => {
     if (!selection) return;
     const valid = capture();
@@ -84,9 +88,9 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     setAnnotationUndoDepth(annotationUndoStack.current.length);
   };
 
-  const createInkSegment = (page: number, rects: HighlightRect[], color: Highlight['color'], tags: string[], comment = '') => createHighlight(document.id, {
+  const createInkSegment = (page: number, rects: HighlightRect[], color: Highlight['color'], tags: string[], comment = '', text = `手写标注 · PDF 第 ${page} 页`) => createHighlight(document.id, {
     page_number: page,
-    text: `手写标注 · PDF 第 ${page} 页`,
+    text,
     rects,
     color,
     comment,
@@ -97,10 +101,16 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const kind = style?.tool || (annotationTool === 'marker' ? 'marker' : 'pen');
     const width = style?.width ?? annotationWidth, color = style?.color ?? annotationColor;
     const sampled = points.length <= 1200 ? points : points.filter((_, index) => index % Math.ceil(points.length / 1200) === 0).slice(0, 1200);
-    const valid = capture();
+    const valid = capture(),forceNew=forceNewMark.current;
+    forceNewMark.current=false;setNewMarkPending(false);
     return enqueueInk(valid, async () => {
       try {
-        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, [INK_TAG, kind, ...surfaceTags(style?.surface)]);
+        const marks=buildInkMarks(currentHighlights.current),bounds=inkBounds(sampled),surface=style?.surface || 'page';
+        const active=marks.find(mark=>mark.id===activeMark.current && mark.page===page && mark.surface===surface && nearby(mark.bounds,bounds));
+        const mark=forceNew?undefined:active || closestMark(marks,page,surface,bounds);
+        const regionId=mark?.id || crypto.randomUUID();
+        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, regionTags([INK_TAG, kind, ...surfaceTags(surface)],regionId),'',mark?.name || `标记 ${marks.length+1}`);
+        activeMark.current=regionId;
         if (!valid()) return;
         commitInk(items => [...items, annotation]);
         pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
@@ -112,6 +122,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const valid = capture();
     return enqueueInk(valid, async () => {
       const removed: Highlight[] = [], addedIds: string[] = [];
+      const marks=buildInkMarks(currentHighlights.current);
       try {
         for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG) && inkSurface(value)===surface)) {
           const segments = eraseInk(item.rects, points, dimensions, radius);
@@ -119,7 +130,9 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
           const replacements: Highlight[] = [];
           try {
             // Keep the original until every replacement is saved successfully.
-            for (const rects of segments) replacements.push(await createInkSegment(page, rects, item.color, item.tags, item.comment));
+            const mark=marks.find(mark=>mark.members.some(member=>member.id===item.id));
+            const tags=mark?regionTags(item.tags,mark.id):item.tags;
+            for (const rects of segments) replacements.push(await createInkSegment(page, rects, item.color, tags, item.comment,item.text));
             await deleteHighlight(document.id, item.id);
           } catch (reason) {
             await Promise.allSettled(replacements.map(value => deleteHighlight(document.id, value.id)));
@@ -127,7 +140,8 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
           }
           if (!valid()) return;
           commitInk(items => [...items.filter(value => value.id !== item.id), ...replacements]);
-          removed.push(item); addedIds.push(...replacements.map(value => value.id));
+          const originalMark=marks.find(mark=>mark.members.some(member=>member.id===item.id));
+          removed.push(originalMark?{...item,tags:regionTags(item.tags,originalMark.id)}:item); addedIds.push(...replacements.map(value => value.id));
         }
       } catch (reason) {if (valid()) setError(reason instanceof Error ? reason.message : '局部擦除失败');}
       finally {if (valid() && removed.length) pushAnnotationUndo({type: 'erase', addedIds, removed});}
@@ -142,7 +156,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
       setAnnotationUndoDepth(annotationUndoStack.current.length);
       const restored: Highlight[] = [];
       try {
-        for (const item of action.removed || []) restored.push(await createInkSegment(item.page_number, item.rects, item.color, item.tags, item.comment));
+        for (const item of action.removed || []) restored.push(await createInkSegment(item.page_number, item.rects, item.color, item.tags, item.comment,item.text));
         await Promise.all(action.addedIds.map(id => deleteHighlight(document.id, id)));
         if (!valid()) return;
         // Older undo entries refer to the original IDs, which restoration replaces.
@@ -159,6 +173,35 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
         setAnnotationUndoDepth(annotationUndoStack.current.length);
         setError(reason instanceof Error ? reason.message : '撤销标注失败');
       }
+    });
+  };
+
+  const renameMark=async(mark:InkMark,name:string)=>{
+    const valid=capture();
+    return enqueueInk(valid,async()=>{
+      try{
+        const current=buildInkMarks(currentHighlights.current).find(value=>value.id===mark.id);
+        if(!current)throw new Error('标记已变化，请重新选择。');
+        const updated=await renameInkMark(document.id,current.members.map(item=>item.id),current.id,name.trim());
+        if(!valid())return;
+        const updatedIds=new Set(updated.map(item=>item.id));
+        commitInk(items=>[...items.filter(item=>!updatedIds.has(item.id)),...updated]);
+        for(const action of annotationUndoStack.current)if(action.removed)action.removed=action.removed.map(item=>
+          updatedIds.has(item.id) || item.tags.includes('__ink_region:'+current.id)?{...item,text:name.trim(),tags:regionTags(item.tags,current.id)}:item);
+      }catch(reason){if(valid())setError(reason instanceof Error?reason.message:'标记命名失败');throw reason;}
+    });
+  };
+  const removeMark=async(mark:InkMark)=>{
+    const valid=capture();
+    return enqueueInk(valid,async()=>{
+      try{
+        const current=buildInkMarks(currentHighlights.current).find(value=>value.id===mark.id);
+        if(!current)throw new Error('标记已变化，请重新选择。');
+        const result=await deleteInkMark(document.id,current.members.map(item=>item.id),current.id);
+        if(!valid())return;
+        const ids=new Set(result.deleted_ids);commitInk(items=>items.filter(item=>!ids.has(item.id)));
+        pushAnnotationUndo({type:'erase',addedIds:[],removed:result.removed.map(item=>({...item,tags:regionTags(item.tags,current.id)}))});
+      }catch(reason){if(valid())setError(reason instanceof Error?reason.message:'删除标记失败');throw reason;}
     });
   };
 
@@ -193,7 +236,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     window.addEventListener('keydown', handleUndoShortcut);
     return () => window.removeEventListener('keydown', handleUndoShortcut);
   }, [document.id, annotationToolbarOpen, annotationUndoDepth]);
-  return {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
+  return {startNewInkMark,newMarkPending,renameMark,removeMark,annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
     saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark};
 }

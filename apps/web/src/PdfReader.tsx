@@ -1,9 +1,11 @@
+import {buildInkMarks} from './features/reader/inkMarks';
+import {InkMarkPanel} from './features/reader/InkMarkPanel';
 import {StickyNoteEditor,NoteImages} from './features/notes/StickyNoteEditor';
 import {OutlineEditor} from './features/outline/OutlineEditor';
 import {ReaderSummaries} from './features/reader/ReaderSummaries';
 import {usePdfSearch} from './features/reader/usePdfSearch';
 import {useAnnotations} from './features/reader/useAnnotations';
-import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {getDocument, GlobalWorkerOptions, PDFDocumentProxy} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
@@ -31,6 +33,9 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [error, setError] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
+  const [inkMarksOpen,setInkMarksOpen]=useState(false);
+  const [toolbarCollapsed,setToolbarCollapsed]=useState(()=>{try{return localStorage.getItem('reader-next-toolbar-collapsed')==='true';}catch{return false;}});
+  useEffect(()=>{try{localStorage.setItem('reader-next-toolbar-collapsed',String(toolbarCollapsed));}catch{}},[toolbarCollapsed]);
   const [sidebarMode, setSidebarMode] = useState<'pages' | 'outline' | 'summary' | null>(null);
   const [summaryReturn, setSummaryReturn] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
@@ -59,7 +64,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const pageSources = useRef(new Map<number, 'native' | 'ocr'>());
   const ocrCache = useRef(new Map<number, OcrWord[]>());
   const {query, setQuery, searching, searchedPages, setSearchedPages, lastSearchQuery, setLastSearchQuery, results, setResults, searchDocument, cancelSearch, pageTextCache} = usePdfSearch(document.id, pdf, setError);
-  const {annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
+  const {startNewInkMark,newMarkPending,renameMark,removeMark,annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
     saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark} = useAnnotations(document, highlights, setHighlights, setError);
   const url = `/api/documents/${document.id}/file`;
@@ -101,7 +106,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     positionReadyRef.current = false;
     pendingRestoreRef.current = null;
     if (positionSaveTimer.current !== null) window.clearTimeout(positionSaveTimer.current);
-    setOutline([]); setOutlineEditorOpen(false); setSummaryReturn(false); setSidebarMode(null); setLoading(true); setError(''); setPdf(null); setSelection(null); setResults([]); setQuery(''); setSearchedPages(0); setLastSearchQuery(''); setTextSource('none'); setOcrProgress(null); pageTextCache.current.clear(); ocrCache.current.clear();
+    setInkMarksOpen(false);setOutline([]); setOutlineEditorOpen(false); setSummaryReturn(false); setSidebarMode(null); setLoading(true); setError(''); setPdf(null); setSelection(null); setResults([]); setQuery(''); setSearchedPages(0); setLastSearchQuery(''); setTextSource('none'); setOcrProgress(null); pageTextCache.current.clear(); ocrCache.current.clear();
     Promise.all([getPosition(document.id), listHighlights(document.id), listOcrPages(document.id).catch(() => []), loadingTask.promise])
       .then(async ([position, savedHighlights, savedOcrPages, loadedPdf]) => {
         if (!alive) return;
@@ -358,7 +363,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     [item.text, item.comment, ...(item.tags || [])].join(' ').toLocaleLowerCase().includes(normalizedHighlightQuery),
   ) : managedHighlights;
   const pageNotes = notes.filter(note => note.page_number === pageNumber && note.tags?.includes('页边便签'));
-  const pageAnnotationCount = highlights.filter(item => item.page_number === pageNumber && item.tags?.includes(INK_TAG)).length;
+  const inkMarks=useMemo(()=>buildInkMarks(highlights),[highlights]);
+  const pageAnnotationCount = inkMarks.filter(mark=>mark.page===pageNumber).length;
 
   const moveToTrace = (index: number) => {
     if (!sourceTrace || index < 0 || index >= sourceTrace.locations.length) return;
@@ -367,7 +373,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   };
 
 
-  return <div className={`pdf-reader original-reader ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
+  return <div className={`pdf-reader original-reader ${toolbarCollapsed?'toolbar-is-collapsed':''} ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
     {outlineEditorOpen && <OutlineEditor documentId={document.id} onClose={()=>setOutlineEditorOpen(false)} onSaved={setOutline}/>}
     <div ref={toolbarRef} className="reader-toolbar original-toolbar">
       <div className="reader-book-heading">
@@ -378,8 +384,10 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         <button aria-label="上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}>←</button>
         <label><input aria-label="PDF页码" value={pageNumber} type="number" min="1" max={pdf?.numPages || 1} onChange={event => changePage(Number(event.target.value))} onKeyDown={event=>{if(event.key==='Enter')changePage(Number(event.currentTarget.value));}}/> / {pdf?.numPages || '—'}</label>
         <button aria-label="下一页" disabled={!pdf || pageNumber >= pdf.numPages} onClick={() => changePage(pageNumber + 1)}>→</button>
+        {toolbarCollapsed && annotationTool && <><span className="compact-ink-state">{annotationTool==='pen'?'画笔':annotationTool==='marker'?'荧光笔':'橡皮擦'}中</span><button onClick={()=>{setAnnotationTool(null);setAnnotationDraft(null);setAnnotationToolbarOpen(false);}}>结束标注</button></>}
+        <button className="toolbar-toggle" aria-expanded={!toolbarCollapsed} onClick={()=>{setToolbarCollapsed(value=>!value);setDisplayOpen(false);}}>{toolbarCollapsed?'展开功能栏':'收起功能栏'}</button>
       </div>
-      <div className="toolbar-group reader-tools">
+      <div className="toolbar-group reader-tools" hidden={toolbarCollapsed}>
         <button className="preparation-status" type="button">{ocrProgress !== null ? `OCR 识别 ${ocrProgress}%` : loading || textSource === 'none' ? '正在读取文字层…' : textSource === 'ocr' ? 'OCR 文字可选' : '文字层已就绪'}</button>
         <button className={sidebarMode === 'outline' ? 'active' : ''} aria-expanded={sidebarMode === 'outline'} title="目录" onClick={() => setSidebarMode(value => value === 'outline' ? null : 'outline')}><span className="tool-icon" aria-hidden="true">☰</span><span>目录</span></button>
         <button className={sidebarMode === 'summary' ? 'active' : ''} aria-expanded={sidebarMode === 'summary'} onClick={() => setSidebarMode(value => value === 'summary' ? null : 'summary')}>章节总结</button>
@@ -388,6 +396,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         <button className={searchOpen ? 'active' : ''} aria-expanded={searchOpen} aria-label="书内搜索" title="书内搜索" onClick={() => setSearchOpen(value => {if (value) cancelSearch(); return !value;})}><span className="tool-icon" aria-hidden="true">⌕</span></button>
         <button className={regionMode ? 'active' : ''} aria-pressed={regionMode} title="框选区域解释" onClick={() => {setRegionMode(value => !value); setRegion(null); setAnnotationTool(null);}}><span className="tool-icon" aria-hidden="true">⌗</span><span>框选</span></button>
         <button className={annotationToolbarOpen ? 'active' : ''} aria-expanded={annotationToolbarOpen} title="在 PDF 上绘制标注" onClick={() => {const next = !annotationToolbarOpen; setAnnotationToolbarOpen(next); setAnnotationTool(next ? (annotationTool || 'pen') : null); if (!next) setAnnotationDraft(null); setRegionMode(false); setRegion(null);}}><span className="tool-icon" aria-hidden="true">✎</span><span>标注</span>{pageAnnotationCount ? <sup>{pageAnnotationCount}</sup> : null}</button>
+        <button title="管理手写标记" aria-expanded={inkMarksOpen} onClick={()=>setInkMarksOpen(value=>!value)}>标记{inkMarks.length>0 && <sup>{inkMarks.length}</sup>}</button>
         <button className={notePanelOpen ? 'active' : ''} aria-expanded={notePanelOpen} title="页边便签" onClick={() => setNotePanelOpen(value => !value)}><span className="tool-icon" aria-hidden="true">▤</span><span>便签</span>{pageNotes.length ? <sup>{pageNotes.length}</sup> : null}</button>
         <button className={highlightOpen ? 'active' : ''} aria-expanded={highlightOpen} title="高亮管理" aria-label="高亮管理" onClick={() => setHighlightOpen(value => !value)}><span className="tool-icon" aria-hidden="true">★</span>{managedHighlights.length ? <sup>{managedHighlights.length}</sup> : null}</button>
         {onAssistantToggle && <button className={assistantOpen ? 'active' : ''} aria-expanded={assistantOpen} onClick={onAssistantToggle}><span className="tool-icon assistant-icon" aria-hidden="true">◇</span><span>{assistantOpen ? '收起助读' : 'AI助读'}</span></button>}
@@ -398,7 +407,9 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         </div></details>
       </div>
     </div>
-    {annotationToolbarOpen && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
+    {annotationToolbarOpen && !toolbarCollapsed && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
+      <button onClick={startNewInkMark}>{newMarkPending?'下笔创建新标记':'新建标记'}</button>
+      <button onClick={()=>setInkMarksOpen(value=>!value)}>标记列表</button>
       <button className={annotationTool === 'pen' ? 'active' : ''} onClick={() => setAnnotationTool('pen')}>画笔</button>
       <button className={annotationTool === 'marker' ? 'active' : ''} onClick={() => setAnnotationTool('marker')}>荧光笔</button>
       <button className={annotationTool === 'eraser' ? 'active' : ''} onClick={() => setAnnotationTool('eraser')}>橡皮擦</button>
@@ -409,6 +420,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
       <button disabled={!annotationUndoDepth} title="撤销标注（Ctrl+Z）" onClick={() => void undoAnnotation()}>撤销 Ctrl+Z</button>
       <button onClick={() => {setAnnotationTool(null); setAnnotationDraft(null); setAnnotationToolbarOpen(false);}}>完成</button>
     </div>}
+    {inkMarksOpen && <InkMarkPanel key={`ink-marks:${document.id}`} marks={inkMarks} onClose={()=>setInkMarksOpen(false)} onRename={renameMark} onDelete={removeMark} onJump={mark=>{changePage(mark.page);setInkMarksOpen(false);}}/>}
     {searchOpen && <div className="search-panel">
       <header><strong>书内搜索</strong><button aria-label="关闭搜索" onClick={() => {cancelSearch(); setSearchOpen(false);}}>×</button></header>
       <form className="search-form" onSubmit={event => {event.preventDefault(); void searchDocument();}}><label className="search-input-wrap"><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索原文文字…"/>{query && <button type="button" aria-label="清空搜索" onClick={() => {cancelSearch(); setQuery(''); setResults([]); setLastSearchQuery(''); setSearchedPages(pageTextCache.current.size);}}>×</button>}</label><button disabled={searching || !query.trim()}>{searching ? '索引中' : '搜索'}</button></form>

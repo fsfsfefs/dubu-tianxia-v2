@@ -477,3 +477,11 @@ export async function saveStickyNote(documentId:string, page:number, content:str
   files.forEach(file=>form.append('files',file));
   return (await json<{note:Note}>(await fetch(`/api/documents/${documentId}/sticky-notes`,{method:'POST',body:form}))).note;
 }
+
+
+export async function renameInkMark(documentId:string,memberIds:string[],regionId:string,name:string):Promise<Highlight[]>{
+ return (await json<{highlights:Highlight[]}>(await fetch(`/api/documents/${documentId}/ink-marks`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({member_ids:memberIds,region_id:regionId,name})}))).highlights;
+}
+export async function deleteInkMark(documentId:string,memberIds:string[],regionId:string):Promise<{deleted_ids:string[];removed:Highlight[]}>{
+ return (await json<{deleted_ids:string[];removed:Highlight[]}>(await fetch(`/api/documents/${documentId}/ink-marks`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({member_ids:memberIds,region_id:regionId})})));
+}

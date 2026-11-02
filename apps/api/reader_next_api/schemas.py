@@ -203,3 +203,9 @@ class StickyNoteInput(BaseModel):
     page_number: int = Field(ge=1)
     content: str = Field(default="", max_length=20000)
     keep_image_ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+class InkMarkInput(BaseModel):
+    member_ids: list[str] = Field(min_length=1, max_length=10000)
+    region_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9:_-]+$")
+    name: str = Field(default="", max_length=120)

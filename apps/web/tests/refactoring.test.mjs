@@ -86,6 +86,14 @@ test('old annotation persistence cannot append into a later A visit or its undo 
 function inkHarness(initial = [], failCreate = () => false) {
  const stored = new Map(initial.map(item=>[item.id,item])), errors=[];let next=0;
  globalThis.fetch=async(url,options)=>{
+  if(String(url).endsWith('/ink-marks')){
+   const body=JSON.parse(options.body),ids=new Set(body.member_ids),rows=[...stored.values()].filter(item=>ids.has(item.id));
+   if(options.method==='PUT'){
+    const updated=rows.map(item=>({...item,text:body.name,tags:[...item.tags.filter(tag=>!tag.startsWith('__ink_region:')),'__ink_region:'+body.region_id]}));
+    for(const item of updated)stored.set(item.id,item);return response({highlights:updated});
+   }
+   for(const item of rows)stored.delete(item.id);return response({deleted_ids:rows.map(item=>item.id),removed:rows});
+  }
   if(options.method==='POST'){
    if(failCreate(++next))return new Response(JSON.stringify({detail:'test save failure'}),{status:500});
    const item={...JSON.parse(options.body),id:`new-${next}`,document_id:'A'};stored.set(item.id,item);return response({highlight:item});
@@ -217,4 +225,32 @@ test('margin ink persists its surface and erase/undo are isolated from PDF and o
  await act(async()=>{await hook.result.current.undoAnnotation();});assert.equal(stored.size,3);
  await act(async()=>{await hook.result.current.saveInkAnnotation(1,[{x:.1,y:.1},{x:.2,y:.2}],{tool:'pen',color:'blue',width:.004,surface:'right'});});
  assert.equal([...stored.values()].at(-1).tags.includes('__margin_right__'),true);assert.deepEqual(errors,[]);
+});
+
+
+test('nearby pen strokes share a region while New Mark deliberately starts a distinct region',async()=>{
+ const {hook,stored,errors}=inkHarness();
+ await act(async()=>{await hook.result.current.saveInkAnnotation(1,[{x:.1,y:.1},{x:.2,y:.2}]);await hook.result.current.saveInkAnnotation(1,[{x:.15,y:.15},{x:.25,y:.25}]);});
+ let rows=[...stored.values()];const region=rows[0].tags.find(tag=>tag.startsWith('__ink_region:'));
+ assert.equal(rows[1].tags.includes(region),true);
+ act(()=>hook.result.current.startNewInkMark());
+ await act(async()=>{await hook.result.current.saveInkAnnotation(1,[{x:.15,y:.15},{x:.25,y:.25}]);});
+ rows=[...stored.values()];assert.equal(rows[2].tags.includes(region),false);
+ assert.deepEqual(errors,[]);
+});
+
+
+test('renaming a region survives erasing, undo and whole-region delete/undo',async()=>{
+ const {buildInkMarks}=await import('../.tmp/tests/features/reader/inkMarks.js');
+ const {hook,stored,errors}=inkHarness();
+ await act(async()=>{await hook.result.current.saveInkAnnotation(1,[{x:.1,y:.5},{x:.9,y:.5}]);await hook.result.current.saveInkAnnotation(1,[{x:.2,y:.51},{x:.3,y:.51}]);});
+ const mark=()=>buildInkMarks(hook.result.current.highlights)[0];
+ await act(async()=>{await hook.result.current.renameMark(mark(),'我的公式');});
+ assert.equal(mark().name,'我的公式');
+ await act(async()=>{await hook.result.current.eraseInkAt(1,[{x:.5,y:.1},{x:.5,y:.9}],pageSize);});
+ assert.equal(buildInkMarks(hook.result.current.highlights).length,1);assert.equal(mark().name,'我的公式');
+ await act(async()=>{await hook.result.current.undoAnnotation();await hook.result.current.removeMark(mark());});
+ assert.equal(stored.size,0);
+ await act(async()=>{await hook.result.current.undoAnnotation();});
+ assert.equal(stored.size,2);assert.equal(mark().name,'我的公式');assert.deepEqual(errors,[]);
 });

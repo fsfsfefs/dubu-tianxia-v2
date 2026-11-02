@@ -90,3 +90,10 @@ features/outline/OutlineEditor提供模型选择、原文/OCR准备进度与取�
 迁移3增加note_images二进制附件，复合外键约束笔记/文档归属，POST sticky-notes通过multipart在一事务保存文字、保留附件清单和新图片；单张及每便签附件总量20MiB，Pillow校验实际格式，读取路由限定文档/笔记/图片并设置nosniff。列表只传附件元信息，图片按需GET。完整ZIP通过SQLite快照携带；单书无图仍格式1，有图使用格式2、note-images/N.bin条目并逐文件大小/hash/真实图片校验、重新关联note_id。
 
 正文和左右留白复用AnnotationLayer，页边笔迹在现有highlights tags增加__margin_left__/__margin_right__，均保留__ink__。useAnnotations按surface隔离擦除并共享撤销队列，AnnotationDraft携带surface防止串区预览；留白宽度由阅读区域ResizeObserver测量，正文几何不变。浏览器兼容模块在main及独立PDF Worker入口执行，按能力补齐Map upsert等接口，Worker延迟加载原PDF.js模块。
+
+
+## 区域标记与折叠工具栏（2026-11-02）
+
+inkMarks.ts将显式__ink_region:标签笔迹按稳定身份分组，未命名的历史笔迹按同页同侧邻近边界计算区域，只读识别不改写历史；新笔画优先加入当前邻近区域，“新建标记”明确生成独立身份。区域名保存在组内highlight.text，原comment、颜色、几何及其他标签保留。PUT/DELETE ink-marks在事务内核验全部成员归属后命名或删除，防止跨书/跨页/跨侧和误操作文字高亮。useAnnotations共用笔迹队列，擦除替代片段、旧撤销条目与整组删除撤销均保留区域身份和名称，备份沿用highlights无需迁移表结构。
+
+PdfReader记忆reader-next-toolbar-collapsed，隐藏主要工具组及标注浮栏而保留翻页/展开/结束绘制，工具状态保持；现有Toolbar ResizeObserver使侧栏和弹出面板随折叠高度同步定位。InkMarkPanel使用独立key避免与章节总结面板重名。
