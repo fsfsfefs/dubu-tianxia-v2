@@ -9,6 +9,7 @@ on:
       - 'apps/android/**'
       - 'apps/api/reader_next_api/**'
       - 'apps/web/**'
+      - 'docs/user-guide.md'
 jobs:
   tablet:
     runs-on: ubuntu-latest
