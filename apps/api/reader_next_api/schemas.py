@@ -173,6 +173,7 @@ class FlashcardReviewInput(BaseModel):
 
 
 class SummaryTaskInput(BaseModel):
+    imported_leaf_index: int | None = Field(default=None, ge=0)
     document_id: str
     profile_id: str
     outline: list[dict] = Field(min_length=1, max_length=1000)

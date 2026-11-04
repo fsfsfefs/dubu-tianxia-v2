@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {chapterKey, chapterPlan as planChapter} from '../../chapters';
-import {reconcileOutline, getImportedOutline, importLearningStructure, listChapterSummaries, listSummaryGaps, saveChapterSummary, listOcrPages, createSummaryTask, pauseSummaryTask,
+import {reconcileOutline, getImportedOutline, importLearningStructure, listChapterSummaries, listSummaryGaps, saveChapterSummary, getDocumentOutline, listOcrPages, createSummaryTask, pauseSummaryTask,
  type ModelProfile, type ChapterSummary, type SummaryGap, type DocumentRecord, type BackgroundTask, type Note, type Flashcard} from '../../api';
 import type {OutlineEntry} from '../../pdfOutline';
 import type {SourceTraceLocation, SourceTraceNavigation} from '../../PdfPages';
@@ -61,7 +61,7 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
   const [returnedSummarySelection, setReturnedSummarySelection] = useState<ReturnedSummarySelection | null>(null);
   const structureFileInput = useRef<HTMLInputElement>(null);
   const gapFileInput = useRef<HTMLInputElement>(null);
-  const gapImportTarget = useRef<{documentId: string; gap: SummaryGap} | null>(null);
+  const gapImportTarget = useRef<{documentId: string; gap: SummaryGap; refreshParent?: boolean} | null>(null);
   const bookGenerationTask = useRef<BookGenerationTask | null>(null);
 
   useEffect(() => {
@@ -151,24 +151,48 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
 
   const importGapSummary = async (file?: File) => {
     const target = gapImportTarget.current;
-    if (!file || !target || target.documentId !== activeDocument?.id) return;
+    if (!file || !target || target.documentId !== activeDocument?.id || importing.current) return;
+    const token = {}; importing.current = token;
     const visit = capture(), epoch = outlineEpoch.current;
     const valid = () => visit() && epoch === outlineEpoch.current && gapImportTarget.current === target;
+    let saved = false;
+    setChapterSummaryError('');
     try {
-      const content = (await file.text()).trim();
+      if (summaryModelLocked) throw new Error('请等待本书当前任务结束后再导入。');
+      const raw = (await file.text()).trim();
+      const content = raw && target.refreshParent ? '【人工导入与拓展】\n' + raw : raw;
       if (!content || content.length > 50000) throw new Error('请选择1至50000字的 Markdown 或 TXT 人工总结。');
       if (!valid()) throw new Error('教材已切换，请重新选择要补充的章节。');
       const index = chapters.findIndex((_, i) => chapterKey(target.documentId, chapters, i) === target.gap.chapter_key);
-      await saveChapterSummary(target.documentId, {...target.gap, depth: Number.isInteger(index) ? chapters[index]?.depth || 0 : 0, content});
+      if (target.refreshParent && index < 0) throw new Error('章节目录已变化，请重新选择小章。');
+      const endPage = target.refreshParent && !planChapter(chapters, index).endPage
+        ? (await getDocumentOutline(target.documentId)).page_count : target.gap.end_page;
+      if (!valid()) return;
+      if (summaryModelLocked || bookGenerationTask.current) throw new Error('请等待本书当前任务结束后再导入。');
+      await saveChapterSummary(target.documentId, {...target.gap, end_page: endPage, depth: Number.isInteger(index) ? chapters[index]?.depth || 0 : 0, content});
+      saved = true;
       const [summaries, gaps] = await Promise.all([listChapterSummaries(target.documentId), listSummaryGaps(target.documentId)]);
       if (valid()) {
         setChapterSummaries(summaries); setSummaryGaps(gaps);
         setStructureImportStatus(`已补充“${target.gap.title}”。可重新执行全书结构以更新上级汇总；本次未调用模型。`);
       }
+      if (target.refreshParent && valid()) {
+        if (!summaryProfileId) {
+          setStructureImportStatus('小章已保存。请先选择本书总结模型，再生成大章或全书结构。');
+          return;
+        }
+        setStructureImportStatus('小章已保存，正在提交上级总结更新。');
+        const task = await createSummaryTask(target.documentId, summaryProfileId,
+          chapters.map(({title, page, depth}) => ({title, page, depth})), null, index);
+        setBackgroundTasks(items => [task, ...items.filter(item => item.id !== task.id)]);
+        if (valid()) {setStructureImportStatus('小章已保存，上级总结更新已提交。'); setTaskCenterOpen(true);}
+      }
     } catch (reason) {
       if (!valid()) return;
+      if (saved && target.refreshParent) setStructureImportStatus('小章已保存。可重新生成大章或全书以更新汇总。');
       setChapterSummaryError(reason instanceof Error ? reason.message : '补充总结失败');
     } finally {
+      if (importing.current === token) importing.current = null;
       if (valid()) {if (gapFileInput.current) gapFileInput.current.value = ''; gapImportTarget.current = null;}
     }
   };

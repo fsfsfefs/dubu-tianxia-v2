@@ -100,7 +100,10 @@ def create_router(runtime: Runtime) -> APIRouter:
         if payload.end_page < payload.start_page:
             raise HTTPException(400, '章节结束页不能早于开始页。')
         try:
-            return {'summary': runtime.repository.save_chapter_summary(document_id, chapter_key, payload.title.strip(), payload.start_page, payload.end_page, payload.depth, payload.content.strip())}
+            with runtime.task_manager.edit_book(document_id):
+                return {'summary': runtime.repository.save_chapter_summary(document_id, chapter_key, payload.title.strip(), payload.start_page, payload.end_page, payload.depth, payload.content.strip())}
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
         except LookupError as error:
             raise HTTPException(404, str(error)) from error
 

@@ -196,6 +196,19 @@ async def run_summary(repository, task_id, options, provider, credential_store, 
     finished = 0
     any_usable = False
     target = options["chapter_index"]
+    imported_indices = [
+        index for index in range(len(outline))
+        if saved.get(chapter_key(document_id, outline, index), {}).get("content", "").startswith("【人工导入与拓展】")
+    ]
+    refresh_ancestors = set()
+    if imported_indices:
+        rules += " 输入中标为人工导入与拓展的材料可纳入汇总，但须明确区分拓展与教材原文，不为拓展编造PDF出处。"
+    for leaf in imported_indices:
+        depth = outline[leaf]["depth"]
+        for index in range(leaf - 1, -1, -1):
+            if outline[index]["depth"] < depth:
+                refresh_ancestors.add(index)
+                depth = outline[index]["depth"]
 
     def boundary_of(index):
         return next((j for j in range(index + 1, len(outline)) if outline[j]["depth"] <= outline[index]["depth"]), len(outline))
@@ -254,7 +267,7 @@ async def run_summary(repository, task_id, options, provider, credential_store, 
         descendants = list(range(index + 1, boundary))
         child_depth = min((outline[j]["depth"] for j in descendants), default=-1)
         children = [j for j in descendants if outline[j]["depth"] == child_depth]
-        if key in saved and index != target and not saved[key]["content"].startswith(marker) and not gaps_in(index, boundary):
+        if key in saved and index not in refresh_ancestors and index != target and not saved[key]["content"].startswith(marker) and not gaps_in(index, boundary):
             finished += boundary - index
             any_usable = True
             progress(f"复用章节：{node['title']}", progress=finished)

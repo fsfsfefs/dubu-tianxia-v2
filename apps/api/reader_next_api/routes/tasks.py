@@ -35,7 +35,19 @@ def create_router(runtime: Runtime) -> APIRouter:
             runtime.repository.profile(payload.profile_id)
             if not runtime.credential_store.get(payload.profile_id):
                 raise ValueError('请先保存此模型的 API Key。')
-            return {'task': runtime.task_manager.enqueue_summary(payload.document_id, {'profile_id': payload.profile_id, 'outline': outline, 'chapter_index': payload.chapter_index})}
+            target = payload.chapter_index
+            leaf = payload.imported_leaf_index
+            if leaf is not None:
+                if leaf >= len(outline) or (leaf + 1 < len(outline) and outline[leaf + 1]["depth"] > outline[leaf]["depth"]):
+                    raise ValueError('只能从小章更新上级总结。')
+                depth = outline[leaf]["depth"]
+                for index in range(leaf - 1, -1, -1):
+                    if outline[index]["depth"] < depth:
+                        target, depth = index, outline[index]["depth"]
+            return {'task': runtime.task_manager.enqueue_summary(payload.document_id, {
+                'profile_id': payload.profile_id, 'outline': outline, 'chapter_index': target,
+                'imported_leaf_index': leaf,
+            })}
         except LookupError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:

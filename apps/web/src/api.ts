@@ -397,10 +397,10 @@ export async function listSummaryGaps(documentId: string): Promise<SummaryGap[]>
   return (await json<{gaps: SummaryGap[]}>(await fetch(`/api/documents/${documentId}/summary-gaps`))).gaps;
 }
 
-export async function createSummaryTask(documentId: string, profileId: string, outline: {title: string; page: number; depth: number}[], chapterIndex: number | null): Promise<BackgroundTask> {
+export async function createSummaryTask(documentId: string, profileId: string, outline: {title: string; page: number; depth: number}[], chapterIndex: number | null, importedLeafIndex?: number): Promise<BackgroundTask> {
   const response = await fetch('/api/tasks/summary', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({document_id: documentId, profile_id: profileId, outline, chapter_index: chapterIndex}),
+    body: JSON.stringify({document_id: documentId, profile_id: profileId, outline, chapter_index: chapterIndex, imported_leaf_index: importedLeafIndex}),
   });
   if (response.status === 404) {
     const body = await response.json().catch(() => ({}));

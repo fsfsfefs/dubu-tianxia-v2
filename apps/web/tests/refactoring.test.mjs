@@ -219,7 +219,7 @@ test('running book shows its submitted model rather than another books default',
 test('margin ink persists its surface and erase/undo are isolated from PDF and opposite margin',async()=>{
  const original=[ink('page'),ink('left',1,['__ink__','pen','__margin_left__']),ink('right',1,['__ink__','pen','__margin_right__'])];
  const {hook,stored,errors}=inkHarness(original);
- await act(async()=>{await hook.result.current.eraseInkAt(1,[{x:.5,y:.1},{x:.5,y:.9}],{width:200,height:842},undefined,'left');});
+ await act(async()=>{await hook.result.current.eraseInkAt(1,[{x:.875,y:.1},{x:.875,y:.9}],{width:200,height:842},undefined,'left');});
  assert.ok(stored.has('page') && stored.has('right'));assert.ok(!stored.has('left'));
  assert.ok([...stored.values()].filter(i=>i.id!=='page' && i.id!=='right').every(i=>i.tags.includes('__margin_left__')));
  await act(async()=>{await hook.result.current.undoAnnotation();});assert.equal(stored.size,3);

@@ -452,3 +452,27 @@ def test_shared_pacer_spaces_starts_across_worker_event_loops():
             future.result(timeout=5)
     assert len(starts) == 3
     assert all(later - earlier >= 0.04 for earlier, later in zip(starts, starts[1:]))
+
+
+def test_imported_leaf_refreshes_cached_ancestor_and_reuses_siblings(setup):
+    repo, doc, options, task_id = setup
+    outline = options['outline']
+    outline.insert(1, {'title': '中间章', 'page': 1, 'depth': 1})
+    outline[2]['depth'] = 2
+    for index, node in enumerate(outline):
+        content = '【人工导入与拓展】\n外部拓展示例' if index == 2 else '旧总结'
+        repo.save_chapter_summary(doc, chapter_key(doc, outline, index), node['title'], node['page'], 2, node['depth'], content)
+    options['chapter_index'] = 0
+    excerpts = []
+
+    async def stream(*args, **kwargs):
+        excerpts.append(kwargs['excerpt'])
+        yield '【知识骨架】汇总含拓展示例'
+
+    finish(run_summary(repo, task_id, options, SimpleNamespace(stream=stream), SimpleNamespace(get=lambda _: 'key')))
+    summaries = {row['title']: row['content'] for row in repo.list_chapter_summaries(doc)}
+    assert len(excerpts) == 2
+    assert '外部拓展示例' in excerpts[0]
+    assert summaries['大章'] == summaries['中间章'] == '【知识骨架】汇总含拓展示例'
+    assert summaries['小章二'] == '旧总结'
+    assert summaries['小章一'].endswith('外部拓展示例')
