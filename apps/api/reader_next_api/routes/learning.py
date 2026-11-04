@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import ValidationError
-from ..schemas import StickyNoteInput, InkMarkInput
+from ..schemas import StickyNoteInput, InkMarkInput, MAX_FLASHCARD_QUESTION_LENGTH
 from ..ink_marks import change_ink_mark
 from ..note_images import MAX_NOTE_IMAGES
 
@@ -16,19 +17,25 @@ from ..schemas import ChapterSummaryInput, FlashcardGenerateInput, FlashcardInpu
 from ..runtime import Runtime
 
 
-def parse_generated_flashcards(raw: str, count: int | None=None) -> list[dict]:
+def parse_generated_flashcards(raw: str, count: int | None=None, *, source: str = '') -> list[dict]:
     start, end = (raw.find('['), raw.rfind(']'))
     parsed = json.loads(raw[start:end + 1]) if start >= 0 and end > start else None
     if not isinstance(parsed, list):
         raise ValueError('模型未返回卡片数组。')
     items = parsed if count is None else parsed[:count]
     cards = []
+    positions = [match.start() for match in re.finditer(r'\S', source)]
+    compact_source = ''.join(source[index] for index in positions)
     for item in items:
         if not isinstance(item, dict):
             continue
-        question = str(item.get('question', '')).strip()[:1000]
+        question = str(item.get('question', '')).strip()[:MAX_FLASHCARD_QUESTION_LENGTH]
         answer = str(item.get('answer', '')).strip()[:4000]
         if question and answer:
+            compact_question = re.sub(r'\s+', '', question)
+            offset = compact_source.find(compact_question)
+            if offset >= 0 and compact_source.find(compact_question, offset + 1) < 0:
+                question = source[positions[offset]:positions[offset + len(compact_question) - 1] + 1]
             cards.append({'question': question, 'answer': answer})
     if not cards:
         raise ValueError('没有识别到可生成卡片的问题。请重新框选包含题目的区域。')
@@ -241,10 +248,14 @@ def create_router(runtime: Runtime) -> APIRouter:
         api_key = runtime.credential_store.get(profile.id)
         if not api_key:
             raise HTTPException(409, '该模型配置尚未保存 API Key。')
-        request = f'根据以下教材原文生成 {payload.count} 张互不重复的中文问答卡片' if payload.count is not None else '识别以下教材原文中出现的全部问题，不限制问题数量，不要合并或遗漏，并为每个问题给出准确答案'
+        request = f'根据以下教材原文生成 {payload.count} 张互不重复的中文问答卡片' if payload.count is not None else (
+            '识别以下教材原文中的全部问题，按原文顺序逐题返回，不要合并或遗漏。'
+            'question 逐字复制该题完整题号、题干、材料、编号陈述和选项，保留原文换行与选项顺序。'
+            '每题的答案仅写在 answer 中。'
+        )
         try:
             raw = await runtime.provider.complete(profile, api_key, system='你是教材题目识别与作答助手。只输出 JSON 数组，不要 Markdown。每项必须包含 question 和 answer 字符串，并保持题目原意。', prompt=f'{request}：\n\n{payload.excerpt}')
-            cards = parse_generated_flashcards(raw, payload.count)
+            cards = parse_generated_flashcards(raw, payload.count, source=payload.excerpt if payload.count is None else '')
             saved = runtime.repository.add_flashcards(document_id, payload.page_number, payload.excerpt, cards)
         except (ValueError, json.JSONDecodeError) as error:
             raise HTTPException(502, str(error)) from error

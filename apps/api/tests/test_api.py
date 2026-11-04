@@ -64,6 +64,18 @@ def test_flashcard_parser_keeps_all_recognized_questions():
     assert len(parse_generated_flashcards(raw, 3)) == 3
 
 
+def test_recognized_flashcards_restore_the_matching_source_lines():
+    import json
+
+    from reader_next_api.routes.learning import parse_generated_flashcards
+
+    question = '9. 下列说法正确的有（ ）\n①第一项\n②第二项\nA 2 项\nB 3 项\nC 4 项\nD 5 项'
+    source = f'8. 前一道题\n{question}\n10. 后一道题'
+    raw = json.dumps([{'question': question.replace('\n', ' '), 'answer': 'A'}])
+    assert parse_generated_flashcards(raw, source=source) == [{'question': question, 'answer': 'A'}]
+    assert parse_generated_flashcards(raw, source='改写过的材料')[0]['question'] == question.replace('\n', ' ')
+
+
 def test_highlight_input_accepts_smooth_ink_colors_and_points():
     points = [{"x": index / 1200, "y": index / 1200, "width": 0.004, "height": 0.004} for index in range(1200)]
 

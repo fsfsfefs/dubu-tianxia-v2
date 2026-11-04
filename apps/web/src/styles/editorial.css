@@ -1074,7 +1074,7 @@ background:#faf9f4;
 border-color:var(--line);
 box-shadow:none;
 color:var(--ink)}
-.note-card p,.flashcard strong{
+.note-card p,.flashcard .flashcard-question{
 color:var(--ink)}
 .flashcard.revealed{
 background:#eef2ea;

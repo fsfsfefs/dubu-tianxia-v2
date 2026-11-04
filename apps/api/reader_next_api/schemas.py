@@ -149,6 +149,9 @@ class NoteUpdateInput(BaseModel):
     pinned: bool = False
 
 
+MAX_FLASHCARD_QUESTION_LENGTH = 12000
+
+
 class FlashcardGenerateInput(BaseModel):
     profile_id: str
     page_number: int | None = Field(default=None, ge=1)
@@ -159,12 +162,12 @@ class FlashcardGenerateInput(BaseModel):
 class FlashcardInput(BaseModel):
     page_number: int | None = Field(default=None, ge=1)
     source_excerpt: str = Field(default="", max_length=12000)
-    question: str = Field(min_length=1, max_length=1000)
+    question: str = Field(min_length=1, max_length=MAX_FLASHCARD_QUESTION_LENGTH)
     answer: str = Field(min_length=1, max_length=4000)
 
 
 class FlashcardUpdateInput(BaseModel):
-    question: str = Field(min_length=1, max_length=1000)
+    question: str = Field(min_length=1, max_length=MAX_FLASHCARD_QUESTION_LENGTH)
     answer: str = Field(min_length=1, max_length=4000)
 
 

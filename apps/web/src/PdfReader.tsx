@@ -1,4 +1,5 @@
 import {useReaderZoom,pageContentTop} from './features/reader/useReaderZoom';
+import {joinRegionLines} from './features/reader/regionText';
 import {buildInkMarks} from './features/reader/inkMarks';
 import {InkMarkPanel} from './features/reader/InkMarkPanel';
 import {StickyNoteEditor,NoteImages} from './features/notes/StickyNoteEditor';
@@ -346,16 +347,19 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     if (!region || region.rect.width < .01 || region.rect.height < .01) { setRegion(null); return; }
     const pageElement = event.currentTarget.closest<HTMLElement>('.pdf-page');
     const pageBounds = pageElement?.getBoundingClientRect();
-    const spans = pageElement?.querySelectorAll('.textLayer span');
+    const spans = pageElement?.querySelectorAll('.textLayer span:not(.markedContent)');
     if (!pageElement || !pageBounds || !spans || Number(pageElement.dataset.pageNumber) !== region.page) return;
     const selectedRect = region.rect;
-    const words = Array.from(spans).filter(span => {
+    const fragments = Array.from(spans).flatMap(span => {
       const box = span.getBoundingClientRect();
       const centerX = (box.left + box.width / 2 - pageBounds.left) / pageBounds.width;
       const centerY = (box.top + box.height / 2 - pageBounds.top) / pageBounds.height;
-      return centerX >= selectedRect.x && centerX <= selectedRect.x + selectedRect.width && centerY >= selectedRect.y && centerY <= selectedRect.y + selectedRect.height;
-    }).map(span => span.textContent || '').filter(Boolean);
-    const text = words.join(' ').trim();
+      const text = span.matches('.ocr-word') ? span.textContent?.trim() : span.textContent;
+      if (!text?.trim() || box.height <= 0 || centerX < selectedRect.x || centerX > selectedRect.x + selectedRect.width
+          || centerY < selectedRect.y || centerY > selectedRect.y + selectedRect.height) return [];
+      return [{text, left: box.left, right: box.right, top: box.top, height: box.height}];
+    });
+    const text = joinRegionLines(fragments);
     if (text) {
       setSelection({page: region.page, text, rects: [selectedRect]});
       onExcerpt(text);

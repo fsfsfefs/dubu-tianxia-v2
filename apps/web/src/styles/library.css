@@ -94,19 +94,22 @@ opacity:.4}
 min-height:0;
 flex:1;
 overflow:auto;
+overscroll-behavior:contain;
 padding:14px;
 display:flex;
 flex-direction:column;
-gap:10px}
+gap:14px}
 
 .flashcard{
-min-height:128px;
+flex:none;
+min-width:0;
 border:1px solid #3c4136;
 background:linear-gradient(145deg,#282c24,#20231e);
 border-radius:13px;
 padding:13px;
 display:flex;
 flex-direction:column;
+gap:10px;
 cursor:pointer;
 box-shadow:0 7px 20px #0003}
 
@@ -116,19 +119,30 @@ background:linear-gradient(145deg,#303628,#24291f)}
 
 .flashcard-meta{
 display:flex;
+flex-wrap:wrap;
+gap:4px 12px;
 justify-content:space-between;
 color:#9eaa89;
-font-size:11px;
-margin-bottom:14px}
+font-size:11px}
 .flashcard-meta button{
 border:0;
 background:transparent;
 color:#a6817a;
 font-size:11px}
 
-.flashcard strong{
+.card-source-text{
+white-space:pre-wrap;
+overflow-wrap:anywhere}
+.flashcard .flashcard-question{
+display:block;
+width:100%;
+border:0;
+background:transparent;
+padding:0;
+text-align:start;
 font-size:14px;
-line-height:1.6;
+font-weight:500;
+line-height:1.75;
 color:#eceee8}
 .flashcard p{
 margin:12px 0 0;
@@ -138,7 +152,6 @@ color:#cfd5c4;
 font-size:13px;
 line-height:1.65}
 .flashcard small{
-margin-top:auto;
 color:#777e72}
 
 .question-recognizer{
@@ -218,6 +231,7 @@ color:#26352c}
 
 .floating-question-card>header{
 display:flex;
+flex:none;
 align-items:center;
 justify-content:space-between;
 gap:12px;
@@ -254,6 +268,7 @@ font-size:18px}
 .floating-card-body{
 min-height:0;
 overflow:auto;
+overscroll-behavior:contain;
 padding:18px}
 .floating-card-body>span{
 color:#6c786f;
@@ -261,7 +276,7 @@ font-size:11px}
 .floating-card-body h3{
 margin:10px 0 18px;
 color:#20372a;
-font:600 18px/1.6 var(--font-editorial)}
+font:500 17px/1.75 var(--font-editorial)}
 .floating-card-body>section{
 padding:14px 15px;
 border-left:3px solid #66836e;
@@ -279,6 +294,8 @@ line-height:1.75}
 
 .floating-question-card>footer{
 display:flex;
+flex:none;
+flex-wrap:wrap;
 justify-content:flex-end;
 gap:7px;
 padding:11px 14px;
