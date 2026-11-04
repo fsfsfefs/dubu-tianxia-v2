@@ -1,6 +1,7 @@
+import {NoteCollection, type useNoteBrowsing} from '../notes/NoteCollection';
 import {NoteImages} from '../notes/StickyNoteEditor';
 import React, {useRef} from 'react';
-import type {DocumentRecord, ModelProfile} from '../../api';
+import type {DocumentRecord, ModelProfile, Note} from '../../api';
 import {useConversation} from './useConversation';
 import {usePanelLayout} from './usePanelLayout';
 import {useNotes} from '../notes/useNotes';
@@ -9,8 +10,8 @@ import {PracticeWorkspace} from '../practice/PracticeWorkspace';
 import {AnswerContent} from '../../StructuredContent';
 type State<T> = React.Dispatch<React.SetStateAction<T>>;
 type Config = {requestReaderPage: (page: number) => void; activeDocument: DocumentRecord | null; documents: DocumentRecord[]; profiles: ModelProfile[]; activeProfile: string; setActiveProfile: State<string>; panelMode: 'chat' | 'master' | 'notes' | 'cards'; setPanelMode: State<'chat' | 'master' | 'notes' | 'cards'>; setSettingsOpen: State<boolean>; setAssistantOpen: State<boolean>; includeCurrentExcerpt: boolean; setIncludeCurrentExcerpt: State<boolean>; excerpt: string; setExcerpt: State<string>; currentPage: number; multiBookMode: boolean; setMultiBookMode: State<boolean>; selectedBookIds: string[]; setSelectedBookIds: State<string[]>; useWebVerification: boolean; setUseWebVerification: State<boolean>; deepAnswer: boolean; setDeepAnswer: State<boolean>; busy: boolean; error: string; enterReader: (document?: DocumentRecord | null, page?: number) => void; setFloatingCardOffset: State<{x: number; y: number}>; setFloatingCardId: State<string | null>};
-type Props = {conversation: ReturnType<typeof useConversation>; notesController: ReturnType<typeof useNotes>; practice: ReturnType<typeof useFlashcards>; layout: ReturnType<typeof usePanelLayout>; config: Config};
-export function AssistantDock({conversation, notesController, practice, layout, config}: Props) {
+type Props = {noteBrowsing: ReturnType<typeof useNoteBrowsing>; conversation: ReturnType<typeof useConversation>; notesController: ReturnType<typeof useNotes>; practice: ReturnType<typeof useFlashcards>; layout: ReturnType<typeof usePanelLayout>; config: Config};
+export function AssistantDock({noteBrowsing, conversation, notesController, practice, layout, config}: Props) {
   const attachment=useRef<HTMLInputElement>(null);
   const {notes, noteDraft, setNoteDraft, noteTitle, setNoteTitle, noteTags, setNoteTags, noteSearch, setNoteSearch, editingNote, setEditingNote, editingContent, setEditingContent, editingTitle, setEditingTitle, editingTags, setEditingTags, addNote, removeNote, saveEditedNote, toggleNotePinned, exportNotes} = notesController;
   const {images, imageBusy, addImages, removeImage, pasteImages, question, setQuestion, messages, assistantMessages, agentEvents, ragProgress, indexingBookTitle, ragSources, ragStatus, webSources, citationVerification, verificationRunning, runAsk, ask, cancelAsk, clearConversation, saveLastExplanation} = conversation;
@@ -20,6 +21,13 @@ export function AssistantDock({conversation, notesController, practice, layout, 
   const visibleNotes = normalizedNoteSearch ? notes.filter(note =>
     [note.title, note.content, note.excerpt, ...(note.tags || [])].join(' ').toLocaleLowerCase().includes(normalizedNoteSearch),
   ) : notes;
+
+  const beginNoteEdit = (note: Note) => {
+    noteBrowsing.recordOpened(note.id);
+    noteBrowsing.setView('list');
+    setEditingNote(note.id); setEditingContent(note.content); setEditingTitle(note.title || '');
+    setEditingTags((note.tags || []).join(', '));
+  };
 
   return <aside className="assistant-panel original-assistant" aria-label="AI 助读栏" tabIndex={0}>
       <div className={`assistant-head ${assistantSetupCollapsed ? 'is-collapsed' : ''}`}>
@@ -66,7 +74,7 @@ export function AssistantDock({conversation, notesController, practice, layout, 
           <div className="note-compose-footer"><input value={noteTags} onChange={event => setNoteTags(event.target.value)} placeholder="标签，用逗号分隔"/><button disabled={!activeDocument || !noteDraft.trim()} onClick={addNote}>保存笔记</button></div>
         </div>
         <div className="note-filter"><input value={noteSearch} onChange={event => setNoteSearch(event.target.value)} placeholder="搜索标题、正文、摘录或标签…"/><span>{visibleNotes.length} / {notes.length}</span></div>
-        <div className="notes-list">{visibleNotes.map(note => <article className={`note-card ${note.pinned ? 'pinned' : ''}`} key={note.id}><div><span>{note.pinned && '★ '}{note.page_number ? `第 ${note.page_number} 页` : '未标页码'}</span><span className="card-actions"><button onClick={() => void toggleNotePinned(note)}>{note.pinned ? '取消置顶' : '置顶'}</button><button onClick={() => {setEditingNote(note.id); setEditingContent(note.content); setEditingTitle(note.title || ''); setEditingTags((note.tags || []).join(', '));}}>编辑</button><button onClick={() => removeNote(note.id)}>删除</button></span></div>{note.title && <h3>{note.title}</h3>}{note.excerpt && <blockquote>{note.excerpt}</blockquote>}{editingNote === note.id ? <div className="inline-editor"><input value={editingTitle} onChange={event => setEditingTitle(event.target.value)} placeholder="标题"/><textarea value={editingContent} onChange={event => setEditingContent(event.target.value)}/><input value={editingTags} onChange={event => setEditingTags(event.target.value)} placeholder="标签，用逗号分隔"/><span><button onClick={() => setEditingNote(null)}>取消</button><button onClick={() => saveEditedNote(note.id)}>保存</button></span></div> : <p>{note.content}</p>}<NoteImages images={note.images}/>{!!note.tags?.length && <div className="annotation-tags">{note.tags.map(tag => <span key={tag}>#{tag}</span>)}</div>}<time>{note.updated_at || note.created_at}</time></article>)}{!visibleNotes.length && <div className="assistant-welcome"><span>✎</span><p>{notes.length ? '没有匹配的笔记。' : '阅读时把关键原文引用过来，再写下自己的理解。'}</p></div>}</div>
+        <NoteCollection className="notes-list" notes={visibleNotes} browsing={noteBrowsing} onEdit={beginNoteEdit} empty={<div className="assistant-welcome"><span>✎</span><p>{notes.length ? '没有匹配的笔记。' : '阅读时把关键原文引用过来，再写下自己的理解。'}</p></div>} renderListItem={(note, open) => <article className={`note-card ${note.pinned ? 'pinned' : ''}`} key={note.id}><div><span>{note.pinned && '★ '}{note.page_number ? `第 ${note.page_number} 页` : '未标页码'}</span><span className="card-actions"><button onClick={() => void toggleNotePinned(note)}>{note.pinned ? '取消置顶' : '置顶'}</button><button onClick={open}>打开</button><button onClick={() => beginNoteEdit(note)}>编辑</button><button onClick={() => removeNote(note.id)}>删除</button></span></div>{note.title && <h3>{note.title}</h3>}{note.excerpt && <blockquote>{note.excerpt}</blockquote>}{editingNote === note.id ? <div className="inline-editor"><input value={editingTitle} onChange={event => setEditingTitle(event.target.value)} placeholder="标题"/><textarea value={editingContent} onChange={event => setEditingContent(event.target.value)}/><input value={editingTags} onChange={event => setEditingTags(event.target.value)} placeholder="标签，用逗号分隔"/><span><button onClick={() => setEditingNote(null)}>取消</button><button onClick={() => saveEditedNote(note.id)}>保存</button></span></div> : <p>{note.content}</p>}<NoteImages images={note.images}/>{!!note.tags?.length && <div className="annotation-tags">{note.tags.map(tag => <span key={tag}>#{tag}</span>)}</div>}<time>{note.updated_at || note.created_at}</time></article>}/>
         {error && <div className="error">{error}</div>}
       </div> : <PracticeWorkspace practice={practice} canGenerate={Boolean(excerpt.trim() && activeProfile)} busy={busy} error={error}
         onOpenCard={id => {setFloatingCardId(id); setFloatingCardOffset({x: 0, y: 0});}}/>}
