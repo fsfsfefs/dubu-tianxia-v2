@@ -8,6 +8,15 @@ type Props = {model: ReturnType<typeof useOverview>; activeDocument: DocumentRec
 export function OverviewWorkspace({model, activeDocument, currentPage, notes, flashcards, goBack, enterReader, openMemory, header, settings}: Props) {
   const [outlineEditorOpen,setOutlineEditorOpen]=useState(false);
   const {summaryProfiles, summaryProfileId, setSummaryProfileId, summaryModelLocked, importGapSummary, importLearningStructureFile, chapters, chaptersLoading, selectedChapterIndex, setSelectedChapterIndex, summaryGaps, chapterSummaryBusy, chapterSummaryProgress, chapterSummaryDraft, chapterSummaryError, setChapterSummaryError, structureImportStatus, bookGenerationState, generationScope, summarySelection, setSummarySelection, traceLocations, setTraceLocations, traceLoading, traceError, setTraceError, structureFileInput, gapFileInput, gapImportTarget, captureSummarySelection, findSummarySources, openTraceLocation, renderSummaryText, selectedChapter, selectedChapterKey, requestedChapterEndPage, chapterChildren, chapterKind, selectedChapterSummary, selectedChapterGenerated, selectedChapterTask, selectedChapterTaskStopped, bookSummaryKey, bookSummary, chapterNotes, chapterFlashcards, generateChapterStructure, generateBookStructure, pauseBookStructure, cancelBookStructure} = model;
+  const importChapterButton = selectedChapter && chapterKind === '小章' ? (
+    <button disabled={summaryModelLocked} onClick={() => {
+          gapImportTarget.current = {documentId: activeDocument.id, refreshParent: true, gap: {
+            chapter_key: selectedChapterKey, title: selectedChapter.title, start_page: selectedChapter.page,
+            end_page: requestedChapterEndPage ?? selectedChapterSummary?.end_page ?? selectedChapter.page, reason: '',
+          }};
+          gapFileInput.current?.click();
+        }}>导入小章内容</button>
+  ) : null;
   return <div className="guided-shell" data-feature="overview">{header}<main className="book-overview">
     <button className="back-link" onClick={goBack}>← 学习空间</button>
     <header><div><p>BOOK OVERVIEW　教材总览</p><h1>{activeDocument.title}</h1><span>上次读到 PDF {currentPage}</span></div><div className="overview-header-actions"><label className="summary-model-picker">本书总结模型<select aria-label="本书总结模型" value={summaryProfileId} disabled={summaryModelLocked || !summaryProfiles.length} onChange={event => setSummaryProfileId(event.target.value)}>{!summaryProfiles.length && <option value="">请先保存模型配置</option>}{summaryProfileId && !summaryProfiles.some(profile => profile.id === summaryProfileId) && <option value={summaryProfileId}>任务模型已删除</option>}{summaryProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name} · {profile.model}</option>)}</select></label><button disabled={!summaryProfileId || Boolean(chapterSummaryBusy)} onClick={() => void generateBookStructure()}>{generationScope === 'book' && (bookGenerationState === 'paused' || bookGenerationState === 'cancelled') ? '继续生成全书结构' : bookSummary ? '重新生成全书结构' : '生成全书结构'}</button><button className="primary-action" onClick={() => enterReader()}>继续 PDF {currentPage} →</button></div></header>
@@ -19,15 +28,9 @@ export function OverviewWorkspace({model, activeDocument, currentPage, notes, fl
       <section className="chapter-detail">
         <div className="chapter-heading"><h2>{selectedChapter?.title || '当前学习结构'}</h2>{selectedChapterGenerated && <p>{chapterKind} · PDF {selectedChapterSummary?.start_page}-{selectedChapterSummary?.end_page}</p>}</div>
         <input ref={gapFileInput} hidden type="file" accept=".md,.txt,text/plain,text/markdown" onChange={event => void importGapSummary(event.target.files?.[0])}/>
-        {selectedChapter && chapterKind === '小章' && <button disabled={summaryModelLocked} onClick={() => {
-          gapImportTarget.current = {documentId: activeDocument.id, refreshParent: true, gap: {
-            chapter_key: selectedChapterKey, title: selectedChapter.title, start_page: selectedChapter.page,
-            end_page: requestedChapterEndPage ?? selectedChapterSummary?.end_page ?? selectedChapter.page, reason: '',
-          }};
-          gapFileInput.current?.click();
-        }}>导入小章内容</button>}
         {selectedChapter && !selectedChapterGenerated ? <div className="chapter-structure-empty">
           <p>{chapterKind === '大章' ? `将先生成 ${chapterChildren.length} 个直属子章的总结，再汇总为本大章知识结构。` : `将根据 PDF ${selectedChapter.page}${requestedChapterEndPage ? `-${requestedChapterEndPage}` : ' 至文末'} 的原文生成本小章总结。`}</p>
+          {importChapterButton}
           {chapterSummaryBusy === selectedChapterKey || selectedChapterTaskStopped ? <>
             <div className="chapter-task-actions">
               <span className="chapter-summary-progress">{chapterSummaryProgress}</span>
@@ -40,7 +43,7 @@ export function OverviewWorkspace({model, activeDocument, currentPage, notes, fl
           </> : <button disabled={!summaryProfileId} onClick={() => void generateChapterStructure()}>生成学习结构</button>}
 
         </div> : <>
-          <article className="chapter-summary"><header><div><small>{chapterKind}知识结构</small><span>PDF {selectedChapterSummary?.start_page}-{selectedChapterSummary?.end_page}</span></div><div className="chapter-task-actions">{selectedChapterTaskStopped ? <><button onClick={() => void generateChapterStructure()}>继续生成</button>{bookGenerationState === 'paused' && <button className="danger" onClick={cancelBookStructure}>取消任务</button>}</> : <button disabled={Boolean(chapterSummaryBusy)} onClick={() => void generateChapterStructure()}>重新生成</button>}</div></header>{selectedChapterTaskStopped && <span className="chapter-summary-progress">{chapterSummaryProgress}</span>}<div className="chapter-summary-content trace-selectable" onMouseUp={event => selectedChapterSummary && captureSummarySelection(event, selectedChapterSummary)}>{renderSummaryText(selectedChapterSummary?.content, selectedChapterKey)}</div></article>
+          <article className="chapter-summary"><header><div><small>{chapterKind}知识结构</small><span>PDF {selectedChapterSummary?.start_page}-{selectedChapterSummary?.end_page}</span></div><div className="chapter-task-actions">{importChapterButton}{selectedChapterTaskStopped ? <><button onClick={() => void generateChapterStructure()}>继续生成</button>{bookGenerationState === 'paused' && <button className="danger" onClick={cancelBookStructure}>取消任务</button>}</> : <button disabled={Boolean(chapterSummaryBusy)} onClick={() => void generateChapterStructure()}>重新生成</button>}</div></header>{selectedChapterTaskStopped && <span className="chapter-summary-progress">{chapterSummaryProgress}</span>}<div className="chapter-summary-content trace-selectable" onMouseUp={event => selectedChapterSummary && captureSummarySelection(event, selectedChapterSummary)}>{renderSummaryText(selectedChapterSummary?.content, selectedChapterKey)}</div></article>
           <details className="overview-section" open><summary><div><h3>原文阅读与定位</h3><p>本章从 PDF {selectedChapter?.page || currentPage} 开始</p></div><button onClick={event => {event.preventDefault(); enterReader(activeDocument, selectedChapter?.page || currentPage);}}>进入教材 ↗</button></summary><article><span>01</span><div><strong>目录、搜索与原文定位</strong><p>在原始 PDF 中翻页、搜索、框选、选择文字并回到来源。</p></div></article></details>
           <details className="overview-section" open><summary><div><h3>理解与记忆</h3><p>{chapterNotes.length} 条正文记忆 · {chapterFlashcards.length} 条练习记录</p></div></summary><article><span>02</span><div><strong>解释 Assistant / 学习 Master</strong><p>围绕当前章节原文临时提问，重要解释收入学习记忆；练习卡记录掌握状态。</p></div></article></details>
         </>}

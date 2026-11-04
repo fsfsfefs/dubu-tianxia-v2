@@ -1,3 +1,4 @@
+from hashlib import sha256
 import socket
 import sys
 
@@ -34,7 +35,12 @@ def test_desktop_session_protects_api_static_files_and_cross_origin_requests(tmp
         assert response.status_code == 303
         assert response.headers['cache-control'] == 'no-store'
         assert 'HttpOnly' in response.headers['set-cookie'] and 'SameSite=strict' in response.headers['set-cookie']
-        assert '读步天下' in client.get('/').text
+        revision = sha256((web / 'index.html').read_bytes()).hexdigest()[:16]
+        assert response.headers['location'] == f'/?ui={revision}'
+        entry = client.get(response.headers['location'])
+        assert '读步天下' in entry.text
+        assert entry.headers['cache-control'] == 'no-store'
+        assert 'session-secret' not in response.headers['location']
         assert client.get('/worker.mjs').headers['content-type'].startswith('application/javascript')
         assert client.get('/api/health').json() == {'status': 'ok'}
         assert client.get('/api/documents').json() == {'documents': []}

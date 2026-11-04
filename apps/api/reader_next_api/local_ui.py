@@ -1,13 +1,15 @@
 """Shared, same-origin UI boundary for packaged local applications."""
+from hashlib import sha256
 import mimetypes
 
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from starlette.staticfiles import StaticFiles
 
 
 class DesktopAccess:
-    def __init__(self, app, origin: str, token: str):
+    def __init__(self, app, origin: str, token: str, entry_url: str):
         self.app, self.origin, self.token = app, origin, token
+        self.entry_url = entry_url
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
@@ -21,7 +23,7 @@ class DesktopAccess:
             return await Response(status_code=403)(scope, receive, send)
         bootstrap = scope['path'] == f'/desktop-start/{self.token}' and scope['method'] == 'GET'
         if bootstrap:
-            response = RedirectResponse('/', status_code=303)
+            response = RedirectResponse(self.entry_url, status_code=303)
             response.set_cookie('dubu_session', self.token, httponly=True, samesite='strict')
             response.headers['Cache-Control'] = 'no-store'
             return await response(scope, receive, send)
@@ -35,6 +37,13 @@ def attach_local_ui(app, web, origin, token):
         raise RuntimeError('应用界面资源缺失，请重新安装完整程序。')
     mimetypes.add_type('application/javascript', '.mjs')
     mimetypes.add_type('application/wasm', '.wasm')
+    index = web / 'index.html'
+    revision = sha256(index.read_bytes()).hexdigest()[:16]
+
+    @app.get('/', include_in_schema=False)
+    def entry():
+        return FileResponse(index, headers={'Cache-Control': 'no-store'})
+
     app.mount('/', StaticFiles(directory=web, html=True), name='local-ui')
-    app.add_middleware(DesktopAccess, origin=origin, token=token)
+    app.add_middleware(DesktopAccess, origin=origin, token=token, entry_url=f'/?ui={revision}')
     return app

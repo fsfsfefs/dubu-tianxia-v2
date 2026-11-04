@@ -98,3 +98,21 @@ test('outline waiting time is visible and a timeout preserves manual draft for r
  expect(requests).toBe(2);
  await dialog.getByRole('button',{name:'关闭',exact:true}).click();
 });
+
+
+test('saved leaf summary exposes import beside regenerate', async ({page}, info) => {
+ const book = await clone(page, 'E2E Bookmarks', 'Leaf import ' + info.project.name);
+ await page.goto('/');
+ await page.locator('.library-book').filter({hasText: book.title}).getByRole('button', {name:/打开教材/}).click();
+ const leaf = page.locator('.chapter-entry').filter({hasText: 'Original section'});
+ await leaf.click();
+ const importer = page.getByRole('button', {name:'导入小章内容', exact:true});
+ await expect(importer).toBeVisible();
+ const chooser = page.waitForEvent('filechooser');
+ await importer.click();
+ await (await chooser).setFiles({name:'extension.md', mimeType:'text/markdown', buffer:Buffer.from('人工拓展示例')});
+ const actions = page.locator('.chapter-summary .chapter-task-actions');
+ await expect(actions.getByRole('button', {name:'导入小章内容', exact:true})).toBeVisible();
+ await expect(actions.getByRole('button', {name:'重新生成', exact:true})).toBeVisible();
+ await expect(page.locator('.chapter-summary-content')).toContainText('人工拓展示例');
+});
