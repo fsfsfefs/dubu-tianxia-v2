@@ -21,8 +21,13 @@ public class TabletTest {
     }
     private void ready() throws Exception {
         long deadline=System.currentTimeMillis()+90000;
-        while(System.currentTimeMillis()<deadline){if("true".equals(evaluate("document.body.innerText.includes('打开使用指南')")))return;Thread.sleep(300);}
-        fail("Offline native UI did not load");
+        while(System.currentTimeMillis()<deadline){
+            if("true".equals(evaluate("document.body?.innerText.includes('打开使用指南')")))return;
+            String failure=activity.getActivity().startupErrorForTest();
+            if(failure!=null)fail(failure);
+            Thread.sleep(300);
+        }
+        fail("Offline native UI did not load: "+evaluate("document.body?.innerText.slice(0,1000)"));
     }
     private void awaitJs(String script,long timeout) throws Exception {
         long deadline=System.currentTimeMillis()+timeout;

@@ -4,11 +4,30 @@ import json
 from pathlib import Path
 import secrets
 import socket
+import sys
 import threading
 import time
 import urllib.request
 
 import uvicorn
+
+
+if sys.platform == 'android' or hasattr(sys, 'getandroidapilevel'):
+    from java.android.importer import AssetFinder
+
+    # Flet wheels keep linked libraries in opt/lib. Let Chaquopy's native
+    # loader extract and load them by SONAME alongside its own libraries.
+    _find_chaquopy_library = AssetFinder.find_lib
+
+    def _find_android_library(finder, filename):
+        wheel_path = f'opt/lib/{filename}'
+        if finder.exists(wheel_path):
+            finder.extract_if_changed(wheel_path)
+            return str(Path(finder.extract_root) / wheel_path)
+        return _find_chaquopy_library(finder, filename)
+
+    AssetFinder.find_lib = _find_android_library
+
 
 from .application import create_app
 from .android_embeddings import AndroidEmbeddings

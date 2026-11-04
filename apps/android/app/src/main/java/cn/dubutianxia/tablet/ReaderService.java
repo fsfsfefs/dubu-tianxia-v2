@@ -37,7 +37,7 @@ public final class ReaderService extends Service {
         });
     }
     private File unpack() throws IOException {
-        File root = new File(getNoBackupFilesDir(), "resources-20001");
+        File root = new File(getNoBackupFilesDir(), "resources-" + packageVersion());
         File marker = new File(root, ".ready");
         if (marker.isFile()) return root;
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("Cannot prepare resources");
@@ -54,6 +54,13 @@ public final class ReaderService extends Service {
         }
         if (!marker.createNewFile()) throw new IOException("Cannot finish resources");
         return root;
+    }
+    private long packageVersion() throws IOException {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
+        } catch (android.content.pm.PackageManager.NameNotFoundException exception) {
+            throw new IOException("Cannot determine resource version", exception);
+        }
     }
     @Override public int onStartCommand(Intent intent, int flags, int id) {
         if (intent != null && STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }

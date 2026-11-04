@@ -110,6 +110,7 @@ public final class MainActivity extends Activity {
         if (service.url!=null && !loaded) { loaded=true; web.loadUrl(service.url); return; }
         if (!loaded) main.postDelayed(this::poll,150);
     }
+    String startupErrorForTest() { return service == null ? null : service.error; }
     @Override public void onBackPressed() {
         web.evaluateJavascript("(()=>{const d=document.querySelector('dialog[open]');if(d){d.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;}const b=document.querySelector('button[aria-label=\"返回前一个页面\"], .reader-shell .back-button');if(b&&!b.disabled){b.click();return true;}return false;})()", value->{if(!"true".equals(value))moveTaskToBack(true);});
     }
