@@ -41,10 +41,7 @@ jobs:
           script: |
             adb shell svc wifi disable
             adb shell svc data disable
-            gradle -p apps/android :app:connectedDebugAndroidTest --console=plain || {
-              adb logcat -d -s DubuStartup chromium AndroidRuntime
-              exit 1
-            }
+            gradle -p apps/android :app:connectedDebugAndroidTest --console=plain || (adb logcat -d -s DubuStartup chromium AndroidRuntime; exit 1)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
