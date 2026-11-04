@@ -12,11 +12,11 @@ from .rag import SEMANTIC_MODEL
 
 
 SOURCES = {
-    PRESETS[0]["model_name"]: "Qdrant/bge-small-zh-v1.5",
-    PRESETS[1]["model_name"]: "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q",
+    PRESETS[0]["model_name"]: ("Qdrant/bge-small-zh-v1.5", "46fbe35fd4374a00fee7de77dfddaeb6dd6a2c59"),
+    PRESETS[1]["model_name"]: ("Qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q", "faf4aa4225822f3bc6376869cb1164e8e3feedd0"),
 }
 MODEL_FILE = "model_optimized.onnx"
-MODEL_FILES = (MODEL_FILE, "tokenizer.json", "tokenizer_config.json", "config.json")
+MODEL_FILES = (MODEL_FILE, "tokenizer.json", "tokenizer_config.json")
 
 
 class AndroidDenseModel:
@@ -30,8 +30,9 @@ class AndroidDenseModel:
         self.use_cls = use_cls
         self.tokenizer = Tokenizer.from_file(str(path / "tokenizer.json"))
         config = json.loads((path / "tokenizer_config.json").read_text(encoding="utf-8"))
-        length = config.get("model_max_length")
-        self.tokenizer.enable_truncation(max_length=min(length, 512) if isinstance(length, int) and length > 0 else 512)
+        lengths = [config.get(key) for key in ("model_max_length", "max_length")]
+        limit = min([512, *(length for length in lengths if type(length) is int and length > 0)])
+        self.tokenizer.enable_truncation(max_length=limit)
         self.tokenizer.no_padding()
         options = onnxruntime.SessionOptions()
         options.intra_op_num_threads = 2
@@ -85,28 +86,27 @@ class AndroidEmbeddings(EmbeddingModelManager):
     def _model_path(self, model: dict, source: str) -> Path | None:
         root = self.models_dir.resolve()
         cache = root / "cache"
-        snapshots = cache / ("models--" + source.replace("/", "--")) / "snapshots"
-        candidates = [
-            root / "downloads" / source.replace("/", "--"),
-            cache / "fast-bge-small-zh-v1.5" if source == SOURCES[PRESETS[0]["model_name"]] else None,
-            *sorted(snapshots.glob("*"), reverse=True),
-        ]
+        owner, repo = source.split("/")
+        candidates = [root / "downloads" / source.replace("/", "--")]
+        if repo == "bge-small-zh-v1.5":
+            candidates.append(cache / "fast-bge-small-zh-v1.5")
+        for cached_owner in (owner, owner.lower()):
+            snapshots = cache / f"models--{cached_owner}--{repo}" / "snapshots"
+            candidates.extend(sorted(snapshots.glob("*"), reverse=True))
         if model.get("local_path"):
             candidates = [Path(model["local_path"])]
         for candidate in candidates:
-            if candidate is None:
-                continue
             candidate = candidate.resolve()
             if root in candidate.parents and all((candidate / name).is_file() for name in MODEL_FILES):
                 return candidate
         return None
 
     @staticmethod
-    def _download(source: str, target: Path) -> None:
+    def _download(source: str, revision: str, target: Path) -> None:
         with httpx.Client(follow_redirects=True, timeout=60) as client:
-            for name in MODEL_FILES:
-                limit = (512 if name == MODEL_FILE else 16) * 1024 * 1024
-                with client.stream("GET", f"https://huggingface.co/{source}/resolve/main/{name}") as response:
+            for name in (*MODEL_FILES, "config.json", "special_tokens_map.json"):
+                limit = (512 if name == MODEL_FILE else 32) * 1024 * 1024
+                with client.stream("GET", f"https://huggingface.co/{source}/resolve/{revision}/{name}") as response:
                     response.raise_for_status()
                     received = 0
                     with (target / name).open("wb") as output:
@@ -124,7 +124,7 @@ class AndroidEmbeddings(EmbeddingModelManager):
             preset = next((item for item in PRESETS if item["model_name"] == model["model_name"]), None)
             if not preset:
                 raise ValueError("安卓不支持这个向量模型。")
-            source = SOURCES[preset["model_name"]]
+            source, revision = SOURCES[preset["model_name"]]
 
             def load(path):
                 instance = AndroidDenseModel(path, preset["dimension"], preset is PRESETS[0])
@@ -140,7 +140,7 @@ class AndroidEmbeddings(EmbeddingModelManager):
                     downloads.mkdir(exist_ok=True)
                     with TemporaryDirectory(dir=downloads) as temporary:
                         staging = Path(temporary)
-                        self._download(source, staging)
+                        self._download(source, revision, staging)
                         instance = load(staging)
                         path = downloads / source.replace("/", "--")
                         staging.replace(path)
