@@ -1,6 +1,14 @@
 name: Android tablet
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android.yml'
+      - 'android/**'
+      - 'apps/android/**'
+      - 'apps/api/reader_next_api/**'
+      - 'apps/web/**'
 jobs:
   tablet:
     runs-on: ubuntu-latest

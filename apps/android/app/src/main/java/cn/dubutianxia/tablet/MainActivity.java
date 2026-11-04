@@ -25,7 +25,7 @@ public final class MainActivity extends Activity {
     private final Map<String, Export> exports = new ConcurrentHashMap<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private static final int OPEN = 101, SAVE = 102;
-    private static final long EXPORT_LIMIT = 512L * 1024 * 1024;
+    private static final long EXPORT_LIMIT = 12L * 1024 * 1024 * 1024;
     private static final class Export {
         File file; String name, mime; long bytes; boolean complete;
         Export(File file, String name, String mime) { this.file=file; this.name=name; this.mime=mime; }
@@ -151,7 +151,7 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public synchronized void appendExport(String id,String encoded) throws IOException {
             Export item=exports.get(id); if(item==null||item.complete||encoded.length()>100000)throw new IOException("Invalid export chunk");
-            byte[] bytes=Base64.decode(encoded,Base64.DEFAULT); if(item.bytes+bytes.length>EXPORT_LIMIT)throw new IOException("安卓导出上限为512MB");
+            byte[] bytes=Base64.decode(encoded,Base64.DEFAULT); if(item.bytes+bytes.length>EXPORT_LIMIT)throw new IOException("安卓导出上限为12GB");
             try(FileOutputStream stream=new FileOutputStream(item.file,true)){stream.write(bytes);} item.bytes+=bytes.length;
         }
         @JavascriptInterface public synchronized void cancelExport(String id) { Export item=exports.remove(id);if(item!=null)item.file.delete(); }

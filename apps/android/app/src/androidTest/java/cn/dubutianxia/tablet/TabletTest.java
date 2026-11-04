@@ -66,6 +66,9 @@ public class TabletTest {
     @Test public void offlineBackendAndOcrResources() throws Exception {
         ready(); String report=Python.getInstance().getModule("reader_next_api.android_backend").callAttr("probe").toString();
         assertTrue(report,report.contains("\"builtin_retrieval\": true"));assertTrue(report,report.contains("traineddata.gz\": 200"));
+        assertTrue(report,report.contains("\"embedding_presets\": 2"));
+        assertTrue(report,report.contains("\"image_decoder\": true"));
+        assertTrue(report,report.contains("\"native_embeddings\": true"));
         assertEquals("true",evaluate("document.documentElement.dataset.platform==='android'"));
     }
     @Test public void keystoreEncryptsSecrets() throws Exception {

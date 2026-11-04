@@ -11,7 +11,8 @@ import urllib.request
 import uvicorn
 
 from .application import create_app
-from .embedding_models import BUILTIN_ID, EmbeddingModelManager
+from .android_embeddings import AndroidEmbeddings
+from .embedding_models import BUILTIN_ID
 from .local_ui import attach_local_ui
 from .repository import Repository
 from .runtime import Runtime
@@ -34,29 +35,6 @@ class AndroidCredentials:
 
     def delete(self, profile_id):
         self.vault.delete(profile_id)
-
-
-class AndroidEmbeddings(EmbeddingModelManager):
-    # Desktop model metadata/files survive backup round trips. Android builds
-    # vectors with its builtin model without silently rewriting that metadata.
-    def active(self):
-        return self.builtin()
-
-    def list_models(self):
-        return {'active_id': BUILTIN_ID, 'models': [self.builtin()], 'presets': [],
-                'external_models_supported': False,
-                'platform_note': '安卓单机版使用离线轻量检索；暂不支持桌面 FastEmbed 模型。在线聊天模型可正常配置。'}
-
-    def select(self, model_id):
-        if model_id != BUILTIN_ID:
-            raise ValueError('安卓版本暂不支持 FastEmbed 模型。')
-        return self.builtin()
-
-    def install_download(self, model_name):
-        raise ValueError('安卓版本暂不支持 FastEmbed 模型下载。')
-
-    def install_archive(self, name, model_name, payload):
-        raise ValueError('安卓版本暂不支持 FastEmbed 模型导入。')
 
 
 def android_repository(root):
@@ -127,6 +105,15 @@ def stop():
 
 def probe():
     """Read-only instrumentation evidence; not exposed to JavaScript or HTTP."""
+    from base64 import b64decode
+    from io import BytesIO
+
+    import numpy as np
+    import onnxruntime
+    from PIL import Image
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+
     if _session is None:
         raise RuntimeError('server not ready')
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -137,5 +124,18 @@ def probe():
         with opener.open(_session.origin + path) as response:
             result[path] = response.status
     with opener.open(_session.origin + '/api/embedding-models') as response:
-        result['builtin_retrieval'] = json.load(response)['active_id'] == BUILTIN_ID
+        catalog = json.load(response)
+        result['builtin_retrieval'] = catalog['active_id'] == BUILTIN_ID
+        result['embedding_presets'] = len(catalog['presets'])
+    image = BytesIO()
+    Image.new('RGB', (2, 2), (50, 60, 70)).save(image, 'PNG')
+    result['image_decoder'] = Image.open(image).getpixel((0, 0)) == (50, 60, 70)
+    tokenizer = Tokenizer(WordLevel({'[UNK]': 0, '测试': 1}, unk_token='[UNK]'))
+    # ONNX opset 13 Identity model accepting a two-element float tensor.
+    model = b64decode('CAg6QwoQCgF4EgF5IghJZGVudGl0eRINYW5kcm9pZF9wcm9iZVoPCgF4EgoKCAgBEgQKAggCYg8KAXkSCgoICAESBAoCCAJCAhAN')
+    options = onnxruntime.SessionOptions()
+    options.intra_op_num_threads = 1
+    session = onnxruntime.InferenceSession(model, options, providers=['CPUExecutionProvider'])
+    output = session.run(None, {'x': np.asarray(tokenizer.encode('测试').ids + [2], dtype=np.float32)})
+    result['native_embeddings'] = output[0].tolist() == [1, 2]
     return json.dumps(result)

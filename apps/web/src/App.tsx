@@ -255,13 +255,48 @@ export function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const saveBackup = async (response: Response, filename: string) => {
+    const bridge = (window as Window & {DubuAndroidExport?: {
+      beginExport: (name: string, mime: string) => string;
+      appendExport: (id: string, data: string) => void;
+      cancelExport: (id: string) => void;
+      finishExport: (id: string) => void;
+    }}).DubuAndroidExport;
+    if (!bridge || !response.body) {
+      downloadBlob(await response.blob(), filename);
+      return;
+    }
+    const reader = response.body.getReader();
+    let exportId = '';
+    try {
+      exportId = bridge.beginExport(filename, 'application/zip');
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        for (let offset = 0; offset < value.length; offset += 65536) {
+          const chunk = value.subarray(offset, offset + 65536);
+          let text = '';
+          for (const byte of chunk) text += String.fromCharCode(byte);
+          bridge.appendExport(exportId, btoa(text));
+        }
+      }
+      bridge.finishExport(exportId);
+    } catch (reason) {
+      if (exportId) bridge.cancelExport(exportId);
+      await reader.cancel().catch(() => {});
+      throw reason;
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
   const exportBook = async (book: DocumentRecord) => {
     if (backupBusy) return;
     setBackupBusy(true); setError('');
     try {
       let selectedModel = '';
       try { selectedModel = JSON.parse(window.localStorage.getItem('reader-next-summary-models') || '{}')?.[book.id] || ''; } catch { /* Export persisted learning data even if local preferences are unavailable. */ }
-      downloadBlob(await downloadBookBackup(book.id, selectedModel), `读步天下-单书-${book.title.replace(/[<>:"/\\|?*]/g, '_')}.zip`);}
+      await saveBackup(await downloadBookBackup(book.id, selectedModel), `读步天下-单书-${book.title.replace(/[<>:"/\\|?*]/g, '_')}.zip`);}
     catch (reason) {setError(reason instanceof Error ? reason.message : '单书导出失败');}
     finally {setBackupBusy(false);}
   };
@@ -291,7 +326,7 @@ export function App() {
     setBackupBusy(true); setError('');
     try {
       const backup = await downloadFullBackup();
-      downloadBlob(backup.blob, backup.filename);
+      await saveBackup(backup.response, backup.filename);
     } catch (reason) { setError(reason instanceof Error ? reason.message : '完整备份导出失败'); }
     finally { setBackupBusy(false); }
   };

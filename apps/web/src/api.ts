@@ -322,13 +322,13 @@ export type RestoreReport = {
   credentials_restored: boolean; compatibility?: {chapters_upgraded?: number; historical_records?: number; outlines_recovered?: number}; message: string;
 };
 
-export async function downloadFullBackup(): Promise<{blob: Blob; filename: string}> {
+export async function downloadFullBackup(): Promise<{response: Response; filename: string}> {
   const response = await fetch('/api/backup/full');
   if (!response.ok) await json(response);
   const disposition = response.headers.get('Content-Disposition') || '';
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
   const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-  return {blob: await response.blob(), filename: encoded ? decodeURIComponent(encoded) : plain || 'reader-next-full-backup.zip'};
+  return {response, filename: encoded ? decodeURIComponent(encoded) : plain || 'reader-next-full-backup.zip'};
 }
 
 export async function restoreFullBackup(file: File): Promise<RestoreReport> {
@@ -452,10 +452,10 @@ async function bookBackupRequest(url: string, init?: RequestInit): Promise<Respo
     await new Promise(resolve => window.setTimeout(resolve, 250));
   }
 }
-export async function downloadBookBackup(documentId: string, summaryProfileId = ''): Promise<Blob> {
+export async function downloadBookBackup(documentId: string, summaryProfileId = ''): Promise<Response> {
   const response = await bookBackupRequest(`/api/backup/book/${encodeURIComponent(documentId)}?summary_profile_id=${encodeURIComponent(summaryProfileId)}`);
   if (!response.ok) await json(response);
-  return response.blob();
+  return response;
 }
 export async function importBookBackup(file: File, replaceExisting = false): Promise<{document_id: string; replaced: boolean; safety_backup: string | null; summary_profile_id?: string; message: string}> {
   const body = new FormData(); body.append('file', file); body.append('replace_existing', String(replaceExisting));

@@ -1,6 +1,6 @@
 # 读步天下现有功能清单
 
-安卓平板移植见[安卓说明](android-tablet.md)：本地学习＋在线AI，Keystore、私有存储、系统文件选择和前台服务；首版仅内置轻量检索，不提供FastEmbed模型管理。APK验证状态以交付记录为准。
+安卓平板共用阅读、学习与在线 AI 功能，使用 Keystore、应用私有存储、系统文件选择器和前台服务。安卓以 ONNX 运行与 Windows 相同的两款向量模型，支持下载、导入和离线检索。详见[安卓说明](android-tablet.md)。
 
 Windows桌面版：desktop.py组合既有API、静态前端与Edge WebView2原生窗口，PyInstaller目录打包，内置Python与中英文OCR资源；独立用户目录支持完整ZIP迁移。本机会话API保护、单实例锁及退出确认，不新增AI调用。无安装器、自动更新或数字签名。见[桌面版使用与构建](windows-desktop.md)。
 
