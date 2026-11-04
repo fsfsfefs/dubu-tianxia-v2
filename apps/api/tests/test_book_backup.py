@@ -52,6 +52,7 @@ def test_all_book_tables_roundtrip_and_other_books_are_isolated(tmp_path):
     source,doc,other,archive,stage,data=package(tmp_path)
     with zipfile.ZipFile(archive) as z:
         raw=z.read("book.json")
+        assert "explanation" not in data["tables"]["flashcards"][0]
         assert other["id"].encode() not in raw and b"PRIVATE OTHER BOOK" not in raw
         assert set(z.namelist())=={"manifest.json","book.json","document.pdf"}
     target=Repository(tmp_path/"target")
@@ -74,6 +75,7 @@ def test_all_book_tables_roundtrip_and_other_books_are_isolated(tmp_path):
         assert c.execute("SELECT id FROM model_profiles WHERE id=?",(options["summary_request"]["profile_id"],)).fetchone()
     assert target.list_notes(unrelated["id"])[0]["content"]=="保留的笔记"
     assert target.list_notes(imported)[0]["pinned"]
+    assert target.list_flashcards(imported)[0]["explanation"] == ""
     assert target.get_position(imported)["page_offset"]==.3
     assert target.search_rag(imported,"虚拟内存")
     with pytest.raises(ValueError,match="相同PDF"):
@@ -85,6 +87,21 @@ def test_all_book_tables_roundtrip_and_other_books_are_isolated(tmp_path):
     safety=target.root/"backups"/second["safety_backup"]
     saved=inspect_book_backup(safety,tmp_path/"safety")
     assert len(saved["tables"]["notes"])==2
+
+
+def test_book_backup_roundtrips_card_explanations(tmp_path):
+    source, doc, _ = seed(tmp_path / "source")
+    source.update_flashcard(doc["id"], "card", "问题", "B", "解题过程\n第二行")
+    archive = tmp_path / "book.zip"
+    create_book_backup(source, doc["id"], archive)
+    with zipfile.ZipFile(archive) as bundle:
+        assert json.loads(bundle.read("manifest.json"))["version"] == 4
+    stage = tmp_path / "stage"
+    data = inspect_book_backup(archive, stage)
+    target = Repository(tmp_path / "target")
+    imported = install_book_backup(target, data, stage / "document.pdf")["document_id"]
+    card = target.list_flashcards(imported)[0]
+    assert (card["answer"], card["explanation"], card["review_count"]) == ("B", "解题过程\n第二行", 3)
 
 
 def test_import_error_rolls_back_existing_book_and_new_files(tmp_path):

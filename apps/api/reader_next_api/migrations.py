@@ -218,7 +218,13 @@ def _saved_chats(connection):
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
 
 
-MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images), (4, 'saved chats', _saved_chats))
+def _flashcard_explanations(connection):
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(flashcards)")}
+    if "explanation" not in columns:
+        connection.execute("ALTER TABLE flashcards ADD COLUMN explanation TEXT NOT NULL DEFAULT ''")
+
+
+MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images), (4, 'saved chats', _saved_chats), (5, 'flashcard explanations', _flashcard_explanations))
 
 
 def migrate(connection, migrations=MIGRATIONS):

@@ -273,8 +273,8 @@ class LearningRepository:
                 card_id = str(uuid4())
                 ids.append(card_id)
                 connection.execute(
-                    "INSERT INTO flashcards(id,document_id,page_number,question,answer,source_excerpt) VALUES (?,?,?,?,?,?)",
-                    (card_id, document_id, page_number, card["question"], card["answer"], source),
+                    "INSERT INTO flashcards(id,document_id,page_number,question,answer,source_excerpt,explanation) VALUES (?,?,?,?,?,?,?)",
+                    (card_id, document_id, page_number, card["question"], card["answer"], source, card.get("explanation", "")),
                 )
             placeholders = ",".join("?" for _ in ids)
             rows = connection.execute(
@@ -283,16 +283,16 @@ class LearningRepository:
         return [dict(row) for row in rows]
 
 
-    def add_flashcard(self, document_id: str, page_number: int | None, source: str, question: str, answer: str) -> dict:
-        return self.add_flashcards(document_id, page_number, source, [{"question": question, "answer": answer}])[0]
+    def add_flashcard(self, document_id: str, page_number: int | None, source: str, question: str, answer: str, explanation: str = "") -> dict:
+        return self.add_flashcards(document_id, page_number, source, [{"question": question, "answer": answer, "explanation": explanation}])[0]
 
 
-    def update_flashcard(self, document_id: str, card_id: str, question: str, answer: str) -> dict:
+    def update_flashcard(self, document_id: str, card_id: str, question: str, answer: str, explanation: str | None = None) -> dict:
         self.document_path(document_id)
         with self.connect() as connection:
             cursor = connection.execute(
-                "UPDATE flashcards SET question = ?, answer = ? WHERE id = ? AND document_id = ?",
-                (question, answer, card_id, document_id),
+                "UPDATE flashcards SET question = ?, answer = ?, explanation = COALESCE(?, explanation) WHERE id = ? AND document_id = ?",
+                (question, answer, explanation, card_id, document_id),
             )
             if cursor.rowcount == 0:
                 raise LookupError("知识卡片不存在。")

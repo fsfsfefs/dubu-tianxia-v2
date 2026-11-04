@@ -49,6 +49,10 @@ def create_book_backup(repo, document_id, destination, *, summary_profile_id=Non
             row["data_file"]=name
         if not image_payloads:tables.pop("note_images")
         if not tables["saved_chats"]:tables.pop("saved_chats")
+        for row in tables["flashcards"]:
+            if not row["explanation"]:
+                row.pop("explanation")
+        has_explanations = any("explanation" in row for row in tables["flashcards"])
         profile_ids = set()
         for row in tables["background_tasks"]:
             profile_id = json.loads(row["result_json"]).get("summary_request", {}).get("profile_id")
@@ -65,7 +69,7 @@ def create_book_backup(repo, document_id, destination, *, summary_profile_id=Non
     pdf = repo.document_path(document_id)
     if len(raw) > LIMITS["book.json"] or pdf.stat().st_size > LIMITS["document.pdf"]:
         raise ValueError("单书备份超过限制（PDF512MB，学习数据128MB）。")
-    manifest = {"format": FORMAT, "version": 3 if tables.get("saved_chats") else 2 if image_payloads else 1, "credentials_included": False, "shared_models_included": False, "created_at": datetime.now(timezone.utc).isoformat(),
+    manifest = {"format": FORMAT, "version": 4 if has_explanations else 3 if tables.get("saved_chats") else 2 if image_payloads else 1, "credentials_included": False, "shared_models_included": False, "created_at": datetime.now(timezone.utc).isoformat(),
                 "files": {"book.json": {"size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()},
                           "document.pdf": {"size": pdf.stat().st_size, "sha256": digest(pdf)}}}
     for name,content in image_payloads.items():
@@ -94,7 +98,7 @@ def inspect_book_backup(path, staging):
             if entry.file_size > LIMITS.get(entry.filename,MAX_NOTE_IMAGES) or entry.flag_bits & 1:
                 raise ValueError("备份文件过大或已加密。")
         manifest = json.loads(archive.read("manifest.json"))
-        if manifest.get("format") != FORMAT or manifest.get("version") not in {1,2,3}:
+        if manifest.get("format") != FORMAT or manifest.get("version") not in {1,2,3,4}:
             raise ValueError("请选择受支持的单书完整备份ZIP。")
         if set(manifest.get("files", {})) != names - {"manifest.json"}:
             raise ValueError("备份清单无效。")
@@ -122,6 +126,10 @@ def inspect_book_backup(path, staging):
             raise ValueError("学习数据数量异常。")
         if any(not isinstance(row, dict) or row.get("document_id") != document["id"] for row in rows):
             raise ValueError("备份含有其他教材的数据。")
+    for row in data["tables"]["flashcards"]:
+        explanation = row.get("explanation", "")
+        if not isinstance(explanation, str) or len(explanation) > 12000:
+            raise ValueError("答题卡片解释无效。")
     image_files=set()
     for row in data["tables"]["note_images"]:
         name=row.pop("data_file",None)

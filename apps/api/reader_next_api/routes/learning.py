@@ -36,7 +36,10 @@ def parse_generated_flashcards(raw: str, count: int | None=None, *, source: str 
             offset = compact_source.find(compact_question)
             if offset >= 0 and compact_source.find(compact_question, offset + 1) < 0:
                 question = source[positions[offset]:positions[offset + len(compact_question) - 1] + 1]
-            cards.append({'question': question, 'answer': answer})
+            card = {'question': question, 'answer': answer}
+            if isinstance(item.get('explanation'), str):
+                card['explanation'] = item['explanation'].strip()[:12000]
+            cards.append(card)
     if not cards:
         raise ValueError('没有识别到可生成卡片的问题。请重新框选包含题目的区域。')
     return cards
@@ -251,10 +254,10 @@ def create_router(runtime: Runtime) -> APIRouter:
         request = f'根据以下教材原文生成 {payload.count} 张互不重复的中文问答卡片' if payload.count is not None else (
             '识别以下教材原文中的全部问题，按原文顺序逐题返回，不要合并或遗漏。'
             'question 逐字复制该题完整题号、题干、材料、编号陈述和选项，保留原文换行与选项顺序。'
-            '每题的答案仅写在 answer 中。'
+            '每题的简明答案写在 answer 中，解题过程与理由单独写在 explanation 中。'
         )
         try:
-            raw = await runtime.provider.complete(profile, api_key, system='你是教材题目识别与作答助手。只输出 JSON 数组，不要 Markdown。每项必须包含 question 和 answer 字符串，并保持题目原意。', prompt=f'{request}：\n\n{payload.excerpt}')
+            raw = await runtime.provider.complete(profile, api_key, system='你是教材题目识别与作答助手。只输出 JSON 数组，不要 Markdown。每项包含 question、answer 和 explanation 三个字符串，并保持题目原意。', prompt=f'{request}：\n\n{payload.excerpt}')
             cards = parse_generated_flashcards(raw, payload.count, source=payload.excerpt if payload.count is None else '')
             saved = runtime.repository.add_flashcards(document_id, payload.page_number, payload.excerpt, cards)
         except (ValueError, json.JSONDecodeError) as error:
@@ -266,7 +269,7 @@ def create_router(runtime: Runtime) -> APIRouter:
     @router.post('/api/documents/{document_id}/flashcards', status_code=201)
     def create_flashcard(document_id: str, payload: FlashcardInput) -> dict:
         try:
-            card = runtime.repository.add_flashcard(document_id, payload.page_number, payload.source_excerpt, payload.question.strip(), payload.answer.strip())
+            card = runtime.repository.add_flashcard(document_id, payload.page_number, payload.source_excerpt, payload.question.strip(), payload.answer.strip(), payload.explanation.strip())
         except LookupError as error:
             raise HTTPException(404, str(error)) from error
         return {'flashcard': card}
@@ -274,7 +277,8 @@ def create_router(runtime: Runtime) -> APIRouter:
     @router.put('/api/documents/{document_id}/flashcards/{card_id}')
     def update_flashcard(document_id: str, card_id: str, payload: FlashcardUpdateInput) -> dict:
         try:
-            return {'flashcard': runtime.repository.update_flashcard(document_id, card_id, payload.question.strip(), payload.answer.strip())}
+            explanation = payload.explanation.strip() if payload.explanation is not None else None
+            return {'flashcard': runtime.repository.update_flashcard(document_id, card_id, payload.question.strip(), payload.answer.strip(), explanation)}
         except LookupError as error:
             raise HTTPException(404, str(error)) from error
 

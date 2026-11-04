@@ -72,7 +72,7 @@ export type ChatMessage = {
 };
 export type Flashcard = {
   id: string; document_id: string; page_number: number | null; question: string;
-  answer: string; source_excerpt: string; created_at: string; review_count: number;
+  answer: string; explanation?: string; source_excerpt: string; created_at: string; review_count: number;
   mastered: number; last_reviewed_at: string | null;
 };
 
@@ -247,15 +247,15 @@ export async function generateFlashcards(documentId: string, input: {profile_id:
   }))).flashcards;
 }
 
-export async function createFlashcard(documentId: string, input: {page_number: number; source_excerpt: string; question: string; answer: string}): Promise<Flashcard> {
+export async function createFlashcard(documentId: string, input: {page_number: number; source_excerpt: string; question: string; answer: string; explanation?: string}): Promise<Flashcard> {
   return (await json<{flashcard: Flashcard}>(await fetch(`/api/documents/${documentId}/flashcards`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(input),
   }))).flashcard;
 }
 
-export async function updateFlashcard(documentId: string, cardId: string, question: string, answer: string): Promise<Flashcard> {
+export async function updateFlashcard(documentId: string, cardId: string, question: string, answer: string, explanation?: string): Promise<Flashcard> {
   return (await json<{flashcard: Flashcard}>(await fetch(`/api/documents/${documentId}/flashcards/${cardId}`, {
-    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({question, answer}),
+    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({question, answer, explanation}),
   }))).flashcard;
 }
 

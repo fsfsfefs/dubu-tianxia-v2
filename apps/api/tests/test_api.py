@@ -47,6 +47,15 @@ def test_manual_flashcard_and_review_api(client):
 
     assert created.status_code == 201
     assert reviewed.json()["flashcard"]["mastered"] == 1
+    assert created.json()["flashcard"]["explanation"] == ""
+    card_url = f"/api/documents/{document['id']}/flashcards/{card_id}"
+    updated = client.put(card_url, json={"question": "Q", "answer": "B", "explanation": "第一行\n第二行"})
+    assert updated.status_code == 200
+    assert updated.json()["flashcard"]["answer"] == "B"
+    assert updated.json()["flashcard"]["explanation"] == "第一行\n第二行"
+    assert updated.json()["flashcard"]["mastered"] == 1
+    assert client.put(card_url, json={"question": "Q", "answer": "C"}).json()["flashcard"]["explanation"] == "第一行\n第二行"
+    assert client.put(card_url, json={"question": "Q", "answer": "C", "explanation": ""}).json()["flashcard"]["explanation"] == ""
 
 
 def test_flashcard_parser_keeps_all_recognized_questions():
@@ -74,6 +83,8 @@ def test_recognized_flashcards_restore_the_matching_source_lines():
     raw = json.dumps([{'question': question.replace('\n', ' '), 'answer': 'A'}])
     assert parse_generated_flashcards(raw, source=source) == [{'question': question, 'answer': 'A'}]
     assert parse_generated_flashcards(raw, source='改写过的材料')[0]['question'] == question.replace('\n', ' ')
+    raw = json.dumps([{'question': question, 'answer': 'A', 'explanation': '第一步\n第二步'}])
+    assert parse_generated_flashcards(raw)[0]['explanation'] == '第一步\n第二步'
 
 
 def test_highlight_input_accepts_smooth_ink_colors_and_points():

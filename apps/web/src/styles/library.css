@@ -281,6 +281,34 @@ font:500 17px/1.75 var(--font-editorial)}
 padding:14px 15px;
 border-left:3px solid #66836e;
 background:#f0f4ed}
+.floating-card-body>section+section{
+margin-top:12px}
+.flashcard-editor,.flashcard-editor label{
+display:grid;
+gap:8px}
+.flashcard-editor label{
+font-size:13px;
+color:#355844}
+.flashcard-editor textarea{
+box-sizing:border-box;
+width:100%;
+resize:vertical;
+padding:8px;
+border:1px solid #bdc9bc;
+background:#fffefb;
+color:#26352c;
+font:inherit}
+.flashcard-editor>div{
+display:flex;
+justify-content:flex-end;
+gap:8px}
+.flashcard-editor button{
+padding:6px 10px;
+border:1px solid #bdc9bc;
+background:#fbfaf5;
+color:#355844}
+.flashcard-editor button[type=submit]{
+background:#e1e9df}
 .floating-card-body>section small{
 display:block;
 color:#557060;

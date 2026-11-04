@@ -164,11 +164,13 @@ class FlashcardInput(BaseModel):
     source_excerpt: str = Field(default="", max_length=12000)
     question: str = Field(min_length=1, max_length=MAX_FLASHCARD_QUESTION_LENGTH)
     answer: str = Field(min_length=1, max_length=4000)
+    explanation: str = Field(default="", max_length=12000)
 
 
 class FlashcardUpdateInput(BaseModel):
     question: str = Field(min_length=1, max_length=MAX_FLASHCARD_QUESTION_LENGTH)
     answer: str = Field(min_length=1, max_length=4000)
+    explanation: str | None = Field(default=None, max_length=12000)
 
 
 class FlashcardReviewInput(BaseModel):

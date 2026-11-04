@@ -37,3 +37,38 @@ test('long answer cards preserve source lines and remain within separate card bo
   await expect(floating.locator('h3')).toHaveText('10. 下一题');
   expect(await floating.locator('.floating-card-body').evaluate(el => el.scrollTop)).toBe(0);
 });
+
+test('card edits persist separate multiline answer and explanation after reopening', async ({page}, info) => {
+  test.skip(info.project.name !== 'mouse', 'Same editor in both browser projects');
+  const docs = (await (await page.request.get('/api/documents')).json()).documents;
+  const book = docs.find(item => item.title === 'E2E Native');
+  const url = `/api/documents/${book.id}/flashcards`;
+  const response = await page.request.post(url, {data: {page_number: 1, question: '测试自定义答题卡片', answer: 'A'}});
+  expect(response.ok()).toBe(true);
+  const {flashcard} = await response.json();
+  try {
+    await page.goto('/');
+    await page.locator('.library-book').filter({hasText: 'E2E Native'}).getByRole('button', {name: /打开教材/}).click();
+    await page.getByRole('button', {name: /继续 PDF/}).click();
+    await page.getByRole('button', {name: 'AI助读', exact: true}).click();
+    await page.getByRole('button', {name: '练习', exact: true}).click();
+    await page.locator('.flashcard').filter({hasText: '测试自定义答题卡片'}).getByRole('button', {name: '编辑', exact: true}).click();
+    const editor = page.getByRole('form', {name: '编辑答题卡片'});
+    await expect(editor.getByRole('textbox', {name: '答案', exact: true})).toHaveValue('A');
+    await editor.getByRole('textbox', {name: '答案', exact: true}).fill('B\n正确选项');
+    await editor.getByRole('textbox', {name: '解释（选填）', exact: true}).fill('第一个理由\n第二个理由');
+    await editor.getByRole('button', {name: '保存修改'}).click();
+    await expect(editor).toHaveCount(0);
+    const floating = page.getByRole('region', {name: '题目悬浮窗'});
+    expect(await floating.locator('section p').allTextContents()).toEqual(['B\n正确选项', '第一个理由\n第二个理由']);
+    await floating.getByRole('button', {name: '关闭题目悬浮窗'}).click();
+    await page.getByRole('button', {name: '测试自定义答题卡片', exact: true}).click();
+    await floating.getByRole('button', {name: '编辑卡片'}).click();
+    await expect(editor.getByRole('textbox', {name: '解释（选填）', exact: true})).toHaveValue('第一个理由\n第二个理由');
+    await editor.getByRole('button', {name: '取消', exact: true}).click();
+    const saved = (await (await page.request.get(url)).json()).flashcards.find(item => item.id === flashcard.id);
+    expect([saved.answer, saved.explanation]).toEqual(['B\n正确选项', '第一个理由\n第二个理由']);
+  } finally {
+    await page.request.delete(`${url}/${flashcard.id}`);
+  }
+});
