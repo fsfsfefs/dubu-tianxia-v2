@@ -2,7 +2,7 @@ import type {InkSurface} from './inkSurface';
 import {useEffect, useRef, useState} from 'react';
 import type {Highlight, HighlightRect} from '../../api';
 import type {AnnotationDraft, AnnotationPoint, AnnotationTool} from '../../PdfPages';
-import {contactTool, penEraser} from './annotationInput';
+import {contactTool, penEraser, penInContact} from './annotationInput';
 import {cutInkPolyline, flattenInk} from './eraseInk';
 import {smoothAnnotationPath} from './inkPath';
 
@@ -28,7 +28,7 @@ export function AnnotationLayer(props: Props) {
   const svg = useRef<SVGSVGElement>(null);
   const gesture = useRef<Gesture | null>(null);
   const frame = useRef<number | null>(null);
-  const revision = useRef(0), lastPen = useRef(0), lastErase = useRef(0);
+  const revision = useRef(0), lastErase = useRef(0);
   const cursorRef = useRef<AnnotationPoint | null>(null);
   const [cursor, setCursor] = useState<AnnotationPoint | null>(null);
   const [preview, setPreview] = useState<PreviewStroke[] | null>(null);
@@ -111,13 +111,11 @@ export function AnnotationLayer(props: Props) {
     }
   };
   const observePen = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (event.pointerType !== 'pen') return;
-    lastPen.current = Date.now();
-    if (gesture.current?.pointerType === 'touch') cancel();
+    if (penInContact(event) && gesture.current?.pointerType === 'touch') cancel();
   };
   const down = (event: React.PointerEvent<SVGSVGElement>) => {
     observePen(event);
-    if (event.pointerType === 'touch' && (penOnly || Date.now() - lastPen.current < 750)) {event.preventDefault(); return;}
+    if (event.pointerType === 'touch' && penOnly) {event.preventDefault(); return;}
     const selected = contactTool(event, tool);
     if (!selected || gesture.current) return;
     event.preventDefault(); cursorRef.current = selected === 'eraser' ? pointAt(event) : null; setCursor(cursorRef.current);
@@ -147,7 +145,7 @@ export function AnnotationLayer(props: Props) {
   const visibleDraft = draft?.page === page && (draft.surface || 'page')===surface ? draft : null;
   return <svg ref={svg} tabIndex={-1} aria-label={`PDF 第 ${page} 页${surface==='page'?'':surface==='left'?'左侧留白':'右侧留白'}标注`} className={`annotation-layer ${tool ? 'active' : ''} ${tool === 'eraser' ? 'eraser' : ''} ${cursor ? 'erasing-cursor' : ''}`}
     viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={down} onPointerMove={move} onPointerUp={up}
-    onPointerEnter={observePen} onPointerLeave={() => {if (!gesture.current) {cursorRef.current = null; setCursor(null);}}}
+    onPointerLeave={() => {if (!gesture.current) {cursorRef.current = null; setCursor(null);}}}
     onPointerCancel={event => {if (gesture.current?.pointerId === event.pointerId) cancel();}}
     onLostPointerCapture={event => {if (gesture.current?.pointerId === event.pointerId) cancel();}}
     onContextMenu={event => {if (tool) event.preventDefault();}}>

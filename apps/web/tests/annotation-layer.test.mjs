@@ -83,6 +83,17 @@ test('palm input during a pen stroke cannot add, move or finish that stroke',asy
  assert.equal(t.saved.length,1);assert.ok(t.saved[0][1].every(p=>p.y===.125));
 });
 
+test('pen hover does not cancel a touch stroke or impose a delay after pen lift',async()=>{
+ const t=setup({tool:'pen'});
+ fireEvent.pointerDown(t.layer,pointer('pen',2,100,100));
+ fireEvent.pointerUp(t.layer,pointer('pen',2,200,100,0));
+ fireEvent.pointerMove(t.layer,pointer('pen',2,200,100,0,-1,0));
+ fireEvent.pointerDown(t.layer,pointer('touch',3,100,200));
+ fireEvent.pointerMove(t.layer,pointer('pen',2,200,100,0,-1,0));
+ await act(async()=>fireEvent.pointerUp(t.layer,pointer('touch',3,200,200,0)));
+ assert.equal(t.saved.length,2);
+});
+
 test('input preferences persist locally and malformed sizes are clamped safely',()=>{
  assert.deepEqual(readAnnotationInput(),{eraserSize:24,penOnly:false});saveAnnotationInput(50,true);assert.deepEqual(readAnnotationInput(),{eraserSize:50,penOnly:true});
  localStorage.setItem('reader-next-v2-annotation-input','{"eraserSize":999,"penOnly":false}');assert.equal(readAnnotationInput().eraserSize,80);

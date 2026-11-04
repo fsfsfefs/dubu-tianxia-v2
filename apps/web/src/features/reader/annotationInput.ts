@@ -6,11 +6,15 @@ export function penEraser(input: PointerInput): boolean {
   return input.pointerType === 'pen' && (input.button === 5 || (input.buttons & 32) !== 0 || (input.buttons & 2) !== 0);
 }
 
+export function penInContact(input: PointerInput): boolean {
+  return input.pointerType === 'pen' && Boolean(input.buttons && ((input.buttons & 33) || input.pressure > 0));
+}
+
 export function contactTool(input: PointerInput, selected: AnnotationTool): AnnotationTool {
   if (!selected || !input.buttons) return null;
   if (input.pointerType === 'pen') {
     // A barrel button can fire pointerdown while the pen is still hovering.
-    if (!(input.buttons & 33) && input.pressure <= 0) return null;
+    if (!penInContact(input)) return null;
     return penEraser(input) ? 'eraser' : selected;
   }
   return (input.buttons & 1) !== 0 ? selected : null;

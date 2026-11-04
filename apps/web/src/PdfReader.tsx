@@ -391,8 +391,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         <button aria-label="上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}>←</button>
         <label><input aria-label="PDF页码" value={pageNumber} type="number" min="1" max={pdf?.numPages || 1} onChange={event => changePage(Number(event.target.value))} onKeyDown={event=>{if(event.key==='Enter')changePage(Number(event.currentTarget.value));}}/> / {pdf?.numPages || '—'}</label>
         <button aria-label="下一页" disabled={!pdf || pageNumber >= pdf.numPages} onClick={() => changePage(pageNumber + 1)}>→</button>
-        {toolbarCollapsed && annotationTool && <><span className="compact-ink-state">{annotationTool==='pen'?'画笔':annotationTool==='marker'?'荧光笔':'橡皮擦'}中</span><button onClick={()=>{setAnnotationTool(null);setAnnotationDraft(null);setAnnotationToolbarOpen(false);}}>结束标注</button></>}
-        <button className="toolbar-toggle" aria-expanded={!toolbarCollapsed} onClick={()=>{setToolbarCollapsed(value=>!value);setDisplayOpen(false);}}>{toolbarCollapsed?'展开功能栏':'收起功能栏'}</button>
+        {annotationTool && !annotationToolbarOpen && <><span className="compact-ink-state">{annotationTool==='pen'?'画笔':annotationTool==='marker'?'荧光笔':'橡皮擦'}中</span>{toolbarCollapsed && <button onClick={()=>setAnnotationToolbarOpen(true)}>展开手写面板</button>}<button onClick={()=>{setAnnotationTool(null);setAnnotationDraft(null);}}>结束标注</button></>}
+        <button className="toolbar-toggle" aria-expanded={!toolbarCollapsed} onClick={()=>{if(!toolbarCollapsed)setAnnotationToolbarOpen(false);setToolbarCollapsed(value=>!value);setDisplayOpen(false);}}>{toolbarCollapsed?'展开功能栏':'收起功能栏'}</button>
       </div>
       <div className="toolbar-group reader-tools" hidden={toolbarCollapsed}>
         <button className="preparation-status" type="button">{ocrProgress !== null ? `OCR 识别 ${ocrProgress}%` : loading || textSource === 'none' ? '正在读取文字层…' : textSource === 'ocr' ? 'OCR 文字可选' : '文字层已就绪'}</button>
@@ -401,8 +401,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         {summaryReturn && <button onClick={() => setSidebarMode('summary')}>↩ 返回章节总结</button>}
         <button className={sidebarMode === 'pages' ? 'active' : ''} aria-expanded={sidebarMode === 'pages'} title="页面缩略图" onClick={() => setSidebarMode(value => value === 'pages' ? null : 'pages')}><span className="tool-icon pages-icon" aria-hidden="true">▤</span><span>页面</span></button>
         <button className={searchOpen ? 'active' : ''} aria-expanded={searchOpen} aria-label="书内搜索" title="书内搜索" onClick={() => setSearchOpen(value => {if (value) cancelSearch(); return !value;})}><span className="tool-icon" aria-hidden="true">⌕</span></button>
-        <button className={regionMode ? 'active' : ''} aria-pressed={regionMode} title="框选区域解释" onClick={() => {setRegionMode(value => !value); setRegion(null); setAnnotationTool(null);}}><span className="tool-icon" aria-hidden="true">⌗</span><span>框选</span></button>
-        <button className={annotationToolbarOpen ? 'active' : ''} aria-expanded={annotationToolbarOpen} title="在 PDF 上绘制标注" onClick={() => {const next = !annotationToolbarOpen; setAnnotationToolbarOpen(next); setAnnotationTool(next ? (annotationTool || 'pen') : null); if (!next) setAnnotationDraft(null); setRegionMode(false); setRegion(null);}}><span className="tool-icon" aria-hidden="true">✎</span><span>标注</span>{pageAnnotationCount ? <sup>{pageAnnotationCount}</sup> : null}</button>
+        <button className={regionMode ? 'active' : ''} aria-pressed={regionMode} title="框选区域解释" onClick={() => {setRegionMode(value => !value); setRegion(null); setAnnotationTool(null); setAnnotationToolbarOpen(false);}}><span className="tool-icon" aria-hidden="true">⌗</span><span>框选</span></button>
+        <button className={annotationTool ? 'active' : ''} aria-expanded={annotationToolbarOpen} title="在 PDF 上绘制标注" onClick={() => {setAnnotationToolbarOpen(!annotationToolbarOpen); if (!annotationTool) setAnnotationTool('pen'); setRegionMode(false); setRegion(null);}}><span className="tool-icon" aria-hidden="true">✎</span><span>标注</span>{pageAnnotationCount ? <sup>{pageAnnotationCount}</sup> : null}</button>
         <button title="管理手写标记" aria-expanded={inkMarksOpen} onClick={()=>setInkMarksOpen(value=>!value)}>标记{inkMarks.length>0 && <sup>{inkMarks.length}</sup>}</button>
         <button className={notePanelOpen ? 'active' : ''} aria-expanded={notePanelOpen} title="页边便签" onClick={() => setNotePanelOpen(value => !value)}><span className="tool-icon" aria-hidden="true">▤</span><span>便签</span>{pageNotes.length ? <sup>{pageNotes.length}</sup> : null}</button>
         <button className={highlightOpen ? 'active' : ''} aria-expanded={highlightOpen} title="高亮管理" aria-label="高亮管理" onClick={() => setHighlightOpen(value => !value)}><span className="tool-icon" aria-hidden="true">★</span>{managedHighlights.length ? <sup>{managedHighlights.length}</sup> : null}</button>
@@ -410,11 +410,11 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         {onOpenGuide && <button aria-label="使用指南" title="使用指南" onClick={onOpenGuide}><span className="tool-icon" aria-hidden="true">?</span></button>}
         <details className="reader-more" open={displayOpen} onToggle={event => setDisplayOpen(event.currentTarget.open)}><summary title="更多阅读工具">···</summary><div>
           <button onClick={() => changeZoom(zoom-.1)}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => changeZoom(zoom+.1)}>＋</button>
-          <button onClick={() => changeZoom(1)}>适应宽度</button><label><input type="checkbox" checked={wheelDirect} onChange={event=>setWheelDirect(event.target.checked)}/>滚轮直接缩放</label><small className="zoom-gesture-help">Ctrl＋滚轮 / 双指缩放</small><label><input type="checkbox" checked={paperTone} onChange={event => setPaperTone(event.target.checked)}/>柔和纸色</label>
+          <button onClick={() => changeZoom(1)}>适应宽度</button><label><input type="checkbox" checked={wheelDirect} onChange={event=>setWheelDirect(event.target.checked)}/>滚轮直接缩放</label><small className="zoom-gesture-help">Ctrl＋滚轮 / 双指缩放 / 右键拖动</small><label><input type="checkbox" checked={paperTone} onChange={event => setPaperTone(event.target.checked)}/>柔和纸色</label>
         </div></details>
       </div>
     </div>
-    {annotationToolbarOpen && !toolbarCollapsed && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
+    {annotationToolbarOpen && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
       <button onClick={()=>setInkMarksOpen(value=>!value)}>标记列表</button>
       <button className={annotationTool === 'pen' ? 'active' : ''} onClick={() => setAnnotationTool('pen')}>画笔</button>
       <button className={annotationTool === 'marker' ? 'active' : ''} onClick={() => setAnnotationTool('marker')}>荧光笔</button>
@@ -424,6 +424,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
       <label>橡皮大小<input aria-label="橡皮大小" type="range" min="8" max="80" step="2" value={eraserSize} onChange={event => setEraserSize(Number(event.target.value))}/><output>{eraserSize}px</output></label>
       <label className="pen-only" title="仅接受手写笔和鼠标，触摸不写画"><input type="checkbox" checked={penOnly} onChange={event => setPenOnly(event.target.checked)}/>仅手写笔</label>
       <button disabled={!annotationUndoDepth} title="撤销标注（Ctrl+Z）" onClick={() => void undoAnnotation()}>撤销 Ctrl+Z</button>
+      <button onClick={() => setAnnotationToolbarOpen(false)}>收起手写面板</button>
       <button onClick={() => {setAnnotationTool(null); setAnnotationDraft(null); setAnnotationToolbarOpen(false);}}>完成</button>
     </div>}
     {inkMarksOpen && <InkMarkPanel key={`ink-marks:${document.id}`} marks={inkMarks} onClose={()=>setInkMarksOpen(false)} onRename={renameMark} onDelete={removeMark} onJump={mark=>{changePage(mark.page);setInkMarksOpen(false);}}/>}
@@ -465,7 +466,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     <div
       ref={scrollRef}
       className="pdf-scroll"
-      title="滚动阅读；Ctrl＋滚轮或双指缩放（50%—300%）"
+      title="滚动阅读，Ctrl＋滚轮或双指缩放（50%—300%），按住鼠标右键拖动"
       onScroll={trackVisiblePage}
     >
       {error && <div className="pdf-status error">{error}</div>}

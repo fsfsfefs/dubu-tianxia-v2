@@ -219,7 +219,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   };
 
   useEffect(() => {
-    if (!annotationToolbarOpen) return;
+    if (!annotationTool) return;
     const handleUndoShortcut = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, [contenteditable="true"]')) return;
@@ -230,7 +230,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     };
     window.addEventListener('keydown', handleUndoShortcut);
     return () => window.removeEventListener('keydown', handleUndoShortcut);
-  }, [document.id, annotationToolbarOpen, annotationUndoDepth]);
+  }, [document.id, annotationTool, annotationUndoDepth]);
   return {renameMark,removeMark,annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly, annotationDraft, setAnnotationDraft, annotationToolbarOpen, setAnnotationToolbarOpen, annotationUndoDepth,
     highlightQuery, setHighlightQuery, editingHighlight, setEditingHighlight, highlightComment, setHighlightComment, highlightTags, setHighlightTags,
     saveTextHighlight, recolorHighlight, saveHighlightDetails, removeHighlight, saveInkAnnotation, eraseInkAt, undoAnnotation, togglePageMark};
