@@ -19,7 +19,8 @@ import {LibraryHome} from './features/library/LibraryHome';
 import {FloatingQuestion} from './features/practice/FloatingQuestion';
 import {useConversation} from './features/assistant/useConversation';
 import {useFlashcards} from './features/practice/useFlashcards';
-import {NoteCollection, useNoteBrowsing} from './features/notes/NoteCollection';
+import {NoteCollection} from './features/notes/NoteCollection';
+import {useRecentView} from './shared/useRecentView';
 import './features/notes/NoteCollection.css';
 import {useNotes} from './features/notes/useNotes';
 import {TaskCenter} from './features/tasks/TaskCenter';
@@ -54,7 +55,8 @@ export function App() {
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<'all' | 'unfiled' | string>('all');
   const [profiles, setProfiles] = useState<ModelProfile[]>([]);
-  const {screen, navigationStack, assistantOpen, setAssistantOpen, memoryBookOpen, memoryMode, setMemoryMode, activeDocument, setActiveDocument, currentPage, setCurrentPage, readerPageRevision, readerRestorePosition, navigateTo, goBack, openBook, enterReader, requestReaderPage, openMemory, openMemoryBook} = useWorkspaceNavigation(documents);
+  const bookBrowsing = useRecentView('book');
+  const {screen, navigationStack, assistantOpen, setAssistantOpen, memoryBookOpen, memoryMode, setMemoryMode, activeDocument, setActiveDocument, currentPage, setCurrentPage, readerPageRevision, readerRestorePosition, navigateTo, goBack, openBook, enterReader, requestReaderPage, openMemory, openMemoryBook} = useWorkspaceNavigation(documents, bookBrowsing.recordOpened);
   const [activeProfile, setActiveProfile] = useState('');
   const [excerpt, setExcerpt] = useState('');
   const [includeCurrentExcerpt, setIncludeCurrentExcerpt] = useState(true);
@@ -71,7 +73,7 @@ export function App() {
   const [taskCenterOpen, setTaskCenterOpen] = useState(false);
   const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTask[]>([]);
   const [error, setError] = useState('');
-  const noteBrowsing = useNoteBrowsing();
+  const noteBrowsing = useRecentView('note');
   const noteController = useNotes(activeDocument, currentPage, excerpt, setError);
   const {notes, setNotes, createPageStickyNote, updatePageStickyNote, deletePageStickyNote} = noteController;
   const practice = useFlashcards({
@@ -396,7 +398,7 @@ export function App() {
 
   const guideUi = guideOpen && <Suspense fallback={<div className="guide-loading" role="status">正在打开使用指南…</div>}><GuideEntry onClose={() => setGuideOpen(false)}/></Suspense>;
   const settingsUi = settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>;
-  if (screen === 'home') return <div className="guided-shell">{guideUi}{header}<GuideLauncher onOpen={() => setGuideOpen(true)}/>{error && <div className="error" role="alert">{error}</div>}<LibraryHome activeDocument={activeDocument} currentPage={currentPage} notesCount={notes.length}
+  if (screen === 'home') return <div className="guided-shell">{guideUi}{header}<GuideLauncher onOpen={() => setGuideOpen(true)}/>{error && <div className="error" role="alert">{error}</div>}<LibraryHome browsing={bookBrowsing} activeDocument={activeDocument} currentPage={currentPage} notesCount={notes.length}
     masteredCount={flashcards.filter(card => card.mastered).length} documents={documents} folders={folders}
     selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} enterReader={() => enterReader()}
     onOverview={() => navigateTo('overview', {memoryBookOpen: false, assistantOpen: false})}

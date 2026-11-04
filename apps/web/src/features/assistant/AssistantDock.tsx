@@ -1,4 +1,5 @@
-import {NoteCollection, type useNoteBrowsing} from '../notes/NoteCollection';
+import {NoteCollection} from '../notes/NoteCollection';
+import type {useRecentView} from '../../shared/useRecentView';
 import {NoteImages} from '../notes/StickyNoteEditor';
 import React, {useRef} from 'react';
 import type {DocumentRecord, ModelProfile, Note} from '../../api';
@@ -10,7 +11,7 @@ import {PracticeWorkspace} from '../practice/PracticeWorkspace';
 import {AnswerContent} from '../../StructuredContent';
 type State<T> = React.Dispatch<React.SetStateAction<T>>;
 type Config = {requestReaderPage: (page: number) => void; activeDocument: DocumentRecord | null; documents: DocumentRecord[]; profiles: ModelProfile[]; activeProfile: string; setActiveProfile: State<string>; panelMode: 'chat' | 'master' | 'notes' | 'cards'; setPanelMode: State<'chat' | 'master' | 'notes' | 'cards'>; setSettingsOpen: State<boolean>; setAssistantOpen: State<boolean>; includeCurrentExcerpt: boolean; setIncludeCurrentExcerpt: State<boolean>; excerpt: string; setExcerpt: State<string>; currentPage: number; multiBookMode: boolean; setMultiBookMode: State<boolean>; selectedBookIds: string[]; setSelectedBookIds: State<string[]>; useWebVerification: boolean; setUseWebVerification: State<boolean>; deepAnswer: boolean; setDeepAnswer: State<boolean>; busy: boolean; error: string; enterReader: (document?: DocumentRecord | null, page?: number) => void; setFloatingCardOffset: State<{x: number; y: number}>; setFloatingCardId: State<string | null>};
-type Props = {noteBrowsing: ReturnType<typeof useNoteBrowsing>; conversation: ReturnType<typeof useConversation>; notesController: ReturnType<typeof useNotes>; practice: ReturnType<typeof useFlashcards>; layout: ReturnType<typeof usePanelLayout>; config: Config};
+type Props = {noteBrowsing: ReturnType<typeof useRecentView>; conversation: ReturnType<typeof useConversation>; notesController: ReturnType<typeof useNotes>; practice: ReturnType<typeof useFlashcards>; layout: ReturnType<typeof usePanelLayout>; config: Config};
 export function AssistantDock({noteBrowsing, conversation, notesController, practice, layout, config}: Props) {
   const attachment=useRef<HTMLInputElement>(null);
   const {notes, noteDraft, setNoteDraft, noteTitle, setNoteTitle, noteTags, setNoteTags, noteSearch, setNoteSearch, editingNote, setEditingNote, editingContent, setEditingContent, editingTitle, setEditingTitle, editingTags, setEditingTags, addNote, removeNote, saveEditedNote, toggleNotePinned, exportNotes} = notesController;

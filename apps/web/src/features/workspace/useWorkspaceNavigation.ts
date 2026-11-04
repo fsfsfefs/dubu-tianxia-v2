@@ -10,7 +10,7 @@ type NavigationEntry = {
   assistantOpen: boolean;
 };
 
-export function useWorkspaceNavigation(documents: DocumentRecord[]) {
+export function useWorkspaceNavigation(documents: DocumentRecord[], recordBookOpened?: (id: string) => void) {
   const [screen, setScreen] = useState<Screen>('home');
   const [navigationStack, setNavigationStack] = useState<NavigationEntry[]>([]);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -38,6 +38,7 @@ export function useWorkspaceNavigation(documents: DocumentRecord[]) {
     const nextAssistantOpen = options.assistantOpen ?? (nextScreen === 'reader' ? assistantOpen : false);
     if (nextScreen === screen && nextDocument?.id === activeDocument?.id && nextPage === currentPage
       && nextMemoryBookOpen === memoryBookOpen && nextAssistantOpen === assistantOpen) return;
+    if (nextDocument && (nextScreen === 'overview' || nextScreen === 'reader')) recordBookOpened?.(nextDocument.id);
     rememberCurrentPage();
     if (options.document) setActiveDocument(options.document);
     if (options.page) setCurrentPage(options.page);

@@ -118,6 +118,7 @@ test('book learning data ignores all late results from an older visit', async ()
 test('library filters books and routes open/move/folder actions without changing the UI contract', () => {
   const actions = [];
   const props = {activeDocument: book, currentPage: 3, notesCount: 1, masteredCount: 2, documents: [book, other], folders: [{id: 'folder', name: '学习', document_count: 1}], selectedFolderId: 'unfiled',
+    browsing: {opened: {}, view: 'list', setView() {}, recordOpened() {}},
     setSelectedFolderId: id => actions.push(['folder', id]), enterReader() {}, onOverview() {}, onImport() {}, openBook: doc => actions.push(['open', doc.id]),
     renameBook() {}, removeBook() {}, moveBookToFolder: (doc, id) => actions.push(['move', doc.id, id]), addFolder() {}, editFolder() {}, removeFolder() {}};
   const ui = render(React.createElement(LibraryHome, props));

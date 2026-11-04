@@ -2,38 +2,12 @@ import {useEffect, useRef, useState, type ReactNode} from 'react';
 import type {Note} from '../../api';
 import {NoteImages} from './StickyNoteEditor';
 
-const OPENED_KEY = 'reader-next-note-opened';
-const VIEW_KEY = 'reader-next-note-view';
+import type {useRecentView} from '../../shared/useRecentView';
 
 export function sortNotesByOpened(notes: Note[], opened: Record<string, number>) {
   return [...notes].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
     || (opened[b.id] || 0) - (opened[a.id] || 0)
     || b.created_at.localeCompare(a.created_at));
-}
-
-export function useNoteBrowsing() {
-  const [opened, setOpened] = useState<Record<string, number>>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(OPENED_KEY) || '{}');
-      return Object.fromEntries(Object.entries(saved).filter((entry): entry is [string, number] =>
-        typeof entry[1] === 'number' && Number.isFinite(entry[1])));
-    } catch {return {};}
-  });
-  const [view, setView] = useState<'list' | 'grid'>(() => {
-    try {return localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'list';}
-    catch {return 'list';}
-  });
-  useEffect(() => {
-    try {localStorage.setItem(OPENED_KEY, JSON.stringify(opened));} catch { /* Storage is optional. */ }
-  }, [opened]);
-  useEffect(() => {
-    try {localStorage.setItem(VIEW_KEY, view);} catch { /* Storage is optional. */ }
-  }, [view]);
-  const recordOpened = (id: string) => {
-    const now = Date.now();
-    setOpened(previous => ({...previous, [id]: Object.values(previous).reduce((latest, time) => Math.max(latest, time), now) + 1}));
-  };
-  return {opened, view, setView, recordOpened};
 }
 
 function noteTitle(note: Note) {
@@ -60,7 +34,7 @@ function NoteDetail({note, onClose, onSource, onEdit}: {
 
 type Props = {
   notes: Note[];
-  browsing: ReturnType<typeof useNoteBrowsing>;
+  browsing: ReturnType<typeof useRecentView>;
   className?: string;
   empty: ReactNode;
   renderListItem: (note: Note, open: () => void) => ReactNode;

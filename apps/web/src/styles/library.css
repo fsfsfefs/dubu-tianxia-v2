@@ -350,3 +350,9 @@ grid-column:1;
 grid-row:auto;
 justify-self:start}
 }
+.library-view-switch{padding-inline:0}
+.book-list-original.library-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(165px,100%),1fr));gap:12px}
+.library-grid .library-book{position:relative;grid-template-columns:minmax(0,1fr);align-content:start;justify-items:center;gap:9px;padding:16px 10px 10px;border:1px solid #d0d9cc;border-radius:12px;background:#fafaf4;text-align:center}
+.library-grid .book-identity{min-width:0;overflow-wrap:anywhere}
+.library-grid .book-more{position:absolute;inset:5px 6px auto auto}
+.library-grid .library-book .book-open{align-self:end}
