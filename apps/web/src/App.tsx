@@ -106,7 +106,8 @@ export function App() {
     setDocuments(nextDocuments);
     setProfiles(nextProfiles);
     setFolders(nextFolders);
-    setActiveDocument(current => current || nextDocuments[0] || null);
+    const recent = [...nextDocuments].sort((a, b) => (bookBrowsing.opened[b.id] || 0) - (bookBrowsing.opened[a.id] || 0))[0];
+    setActiveDocument(current => current || recent || null);
     setActiveProfile(current => current || nextProfiles.find(item => item.is_default)?.id || nextProfiles[0]?.id || '');
   };
 
@@ -400,8 +401,7 @@ export function App() {
   const settingsUi = settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>;
   if (screen === 'home') return <div className="guided-shell">{guideUi}{header}<GuideLauncher onOpen={() => setGuideOpen(true)}/>{error && <div className="error" role="alert">{error}</div>}<LibraryHome browsing={bookBrowsing} activeDocument={activeDocument} currentPage={currentPage} notesCount={notes.length}
     masteredCount={flashcards.filter(card => card.mastered).length} documents={documents} folders={folders}
-    selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} enterReader={() => enterReader()}
-    onOverview={() => navigateTo('overview', {memoryBookOpen: false, assistantOpen: false})}
+    selectedFolderId={selectedFolderId} setSelectedFolderId={setSelectedFolderId} enterReader={enterReader}
     backupBusy={backupBusy} onExportBook={exportBook} onImportBook={() => bookBackupInput.current?.click()} onImport={() => fileInput.current?.click()} openBook={openBook} renameBook={renameBook} removeBook={removeBook}
     moveBookToFolder={moveBookToFolder} addFolder={addFolder} editFolder={editFolder} removeFolder={removeFolder}/>{settingsOpen && <Suspense fallback={<div role="status">正在加载模型设置…</div>}><ModelSettings profiles={profiles} onClose={() => setSettingsOpen(false)} onSaved={async () => {await load(); setSettingsOpen(false);}}/></Suspense>}</div>;
 
