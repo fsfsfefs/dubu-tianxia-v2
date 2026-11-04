@@ -391,8 +391,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         <button aria-label="上一页" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)}>←</button>
         <label><input aria-label="PDF页码" value={pageNumber} type="number" min="1" max={pdf?.numPages || 1} onChange={event => changePage(Number(event.target.value))} onKeyDown={event=>{if(event.key==='Enter')changePage(Number(event.currentTarget.value));}}/> / {pdf?.numPages || '—'}</label>
         <button aria-label="下一页" disabled={!pdf || pageNumber >= pdf.numPages} onClick={() => changePage(pageNumber + 1)}>→</button>
-        {annotationTool && !annotationToolbarOpen && <><span className="compact-ink-state">{annotationTool==='pen'?'画笔':annotationTool==='marker'?'荧光笔':'橡皮擦'}中</span>{toolbarCollapsed && <button onClick={()=>setAnnotationToolbarOpen(true)}>展开手写面板</button>}<button onClick={()=>{setAnnotationTool(null);setAnnotationDraft(null);}}>结束标注</button></>}
-        <button className="toolbar-toggle" aria-expanded={!toolbarCollapsed} onClick={()=>{if(!toolbarCollapsed)setAnnotationToolbarOpen(false);setToolbarCollapsed(value=>!value);setDisplayOpen(false);}}>{toolbarCollapsed?'展开功能栏':'收起功能栏'}</button>
+        {annotationTool && (toolbarCollapsed || !annotationToolbarOpen) && <><span className="compact-ink-state">{annotationTool==='pen'?'画笔':annotationTool==='marker'?'荧光笔':'橡皮擦'}中</span><button onClick={()=>{setAnnotationTool(null);setAnnotationDraft(null);setAnnotationToolbarOpen(false);}}>结束标注</button></>}
+        <button className="toolbar-toggle" aria-expanded={!toolbarCollapsed} onClick={()=>{setToolbarCollapsed(value=>!value);setDisplayOpen(false);}}>{toolbarCollapsed?'展开功能栏':'收起功能栏'}</button>
       </div>
       <div className="toolbar-group reader-tools" hidden={toolbarCollapsed}>
         <button className="preparation-status" type="button">{ocrProgress !== null ? `OCR 识别 ${ocrProgress}%` : loading || textSource === 'none' ? '正在读取文字层…' : textSource === 'ocr' ? 'OCR 文字可选' : '文字层已就绪'}</button>
@@ -414,7 +414,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
         </div></details>
       </div>
     </div>
-    {annotationToolbarOpen && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
+    {annotationToolbarOpen && !toolbarCollapsed && <div className="annotation-toolbar annotation-input-tools" aria-label="PDF 标注工具">
       <button onClick={()=>setInkMarksOpen(value=>!value)}>标记列表</button>
       <button className={annotationTool === 'pen' ? 'active' : ''} onClick={() => setAnnotationTool('pen')}>画笔</button>
       <button className={annotationTool === 'marker' ? 'active' : ''} onClick={() => setAnnotationTool('marker')}>荧光笔</button>
