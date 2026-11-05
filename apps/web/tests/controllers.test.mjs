@@ -119,14 +119,15 @@ test('library filters books and routes open/move/folder actions without changing
   const actions = [];
   const props = {activeDocument: book, currentPage: 3, notesCount: 1, masteredCount: 2, documents: [book, other], folders: [{id: 'folder', name: '学习', document_count: 1}], selectedFolderId: 'unfiled',
     browsing: {opened: {}, view: 'list', setView() {}, recordOpened() {}},
-    setSelectedFolderId: id => actions.push(['folder', id]), enterReader() {}, onOverview() {}, onImport() {}, openBook: doc => actions.push(['open', doc.id]),
+    setSelectedFolderId: id => actions.push(['folder', id]), enterReader: doc => actions.push(['read', doc.id]), onImport() {}, openBook: doc => actions.push(['open', doc.id]),
     renameBook() {}, removeBook() {}, moveBookToFolder: (doc, id) => actions.push(['move', doc.id, id]), addFolder() {}, editFolder() {}, removeFolder() {}};
   const ui = render(React.createElement(LibraryHome, props));
   assert.equal(ui.queryByRole('button', {name: '打开教材 教材B'}), null);
   fireEvent.click(ui.getByRole('button', {name: '打开教材 教材A'}));
+  fireEvent.click(ui.container.querySelector('.library-book strong'));
   fireEvent.change(ui.getByLabelText('移动到'), {target: {value: 'folder'}});
   fireEvent.click(ui.getByRole('button', {name: /全部教材\s*2/}));
-  assert.deepEqual(actions, [['open', 'A'], ['move', 'A', 'folder'], ['folder', 'all']]);
+  assert.deepEqual(actions, [['open', 'A'], ['read', 'A'], ['move', 'A', 'folder'], ['folder', 'all']]);
 });
 
 test('practice view opens the selected question and floating navigation retains review/page callbacks', () => {
