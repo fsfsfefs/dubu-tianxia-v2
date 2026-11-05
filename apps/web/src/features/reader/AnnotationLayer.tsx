@@ -111,6 +111,7 @@ export function AnnotationLayer(props: Props) {
     }
   };
   const observePen = (event: React.PointerEvent<SVGSVGElement>) => {
+    event.currentTarget.dataset.pointerType = gesture.current?.pointerType === 'pen' ? 'pen' : event.pointerType;
     if (penInContact(event) && gesture.current?.pointerType === 'touch') cancel();
   };
   const down = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -144,7 +145,7 @@ export function AnnotationLayer(props: Props) {
   const bounds = svg.current?.getBoundingClientRect();
   const visibleDraft = draft?.page === page && (draft.surface || 'page')===surface ? draft : null;
   return <svg ref={svg} tabIndex={-1} aria-label={`PDF 第 ${page} 页${surface==='page'?'':surface==='left'?'左侧留白':'右侧留白'}标注`} className={`annotation-layer ${tool ? 'active' : ''} ${tool === 'eraser' ? 'eraser' : ''} ${cursor ? 'erasing-cursor' : ''}`}
-    viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={down} onPointerMove={move} onPointerUp={up}
+    viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerEnter={observePen} onPointerDown={down} onPointerMove={move} onPointerUp={up}
     onPointerLeave={() => {if (!gesture.current) {cursorRef.current = null; setCursor(null);}}}
     onPointerCancel={event => {if (gesture.current?.pointerId === event.pointerId) cancel();}}
     onLostPointerCapture={event => {if (gesture.current?.pointerId === event.pointerId) cancel();}}

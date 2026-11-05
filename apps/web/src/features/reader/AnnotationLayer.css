@@ -1,3 +1,4 @@
+.annotation-layer.active[data-pointer-type="pen"]{cursor:none}
 .annotation-layer.erasing-cursor{cursor:none}
 .annotation-eraser-cursor{pointer-events:none;fill:#f7f6ef44;stroke:#355f49;stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-dasharray:4 2}
 .annotation-toolbar.annotation-input-tools{max-width:calc(100% - 24px);flex-wrap:wrap;justify-content:center}
