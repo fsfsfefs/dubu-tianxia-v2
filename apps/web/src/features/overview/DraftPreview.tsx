@@ -1,7 +1,10 @@
-import {useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {getDocument, GlobalWorkerOptions, type PDFDocumentProxy} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import {draftFile, type ChapterDraft, type DraftLink} from './chapterDrafts';
+import {draftFile, type ChapterDraft, type DraftLink, type DraftLinkInput} from './chapterDrafts';
+
+import {pageAtViewportY} from '../reader/pageViewport';
+import {defaultDraftRect, DraftPdfSheet, draftLinkLabel} from './DraftPdfSheet';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -68,35 +71,25 @@ function HtmlPage({html, styles, word}: {html: string; styles: string; word: boo
     }}/>;
 }
 
-function PdfPage({pdf, number}: {pdf: PDFDocumentProxy; number: number}) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let live = true;
-    let render: ReturnType<Awaited<ReturnType<typeof pdf.getPage>>['render']> | undefined;
-    void pdf.getPage(number).then(page => {
-      if (!live || !canvas.current) return;
-      const base = page.getViewport({scale: 1});
-      const viewport = page.getViewport({scale: Math.min(2, 2200 / Math.max(base.width, base.height))});
-      canvas.current.width = Math.ceil(viewport.width);
-      canvas.current.height = Math.ceil(viewport.height);
-      render = page.render({canvas: canvas.current, viewport});
-      return render.promise;
-    }).catch(reason => {if (live) setError(reason instanceof Error ? reason.message : '无法预览此页。');});
-    return () => {live = false; render?.cancel();};
-  }, [pdf, number]);
-  return error ? <p role="alert">{error}</p> : <canvas ref={canvas} aria-label={`导入稿第 ${number} 页`}/>;
-}
-
-export default function DraftPreview({draft, page, setPage, onJump, onAdd}: {
-  draft: ChapterDraft; page: number; setPage: (page: number) => void; onJump: (page: number, label: string) => void; onAdd: (link: DraftLink) => Promise<unknown>;
+export default function DraftPreview({draft, page, setPage, onJump, onSave, onDelete}: {
+  draft: ChapterDraft; page: number; setPage: (page: number) => void; onJump: (page: number, label: string) => void;
+  onSave: (link: DraftLinkInput, id?: string) => Promise<unknown>; onDelete: (id: string) => Promise<unknown>;
 }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy>();
   const [html, setHtml] = useState<HtmlPreview>();
-  const [editing, setEditing] = useState(false);
+  const [editor, setEditor] = useState<DraftLinkInput & {id?: string}>();
+  const [placing, setPlacing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [linkError, setLinkError] = useState('');
+  const [mode, setMode] = useState<'click' | 'scroll'>(() => localStorage.getItem('draft-pdf-page-mode') === 'scroll' ? 'scroll' : 'click');
+  const [aspects, setAspects] = useState<Record<number, number>>({});
+  const storeAspect = useCallback((number: number, value: number) => {
+    setAspects(previous => previous[number] === value ? previous : {...previous, [number]: value});
+  }, []);
+  const scroller = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const pendingPage = useRef(page);
   const file = draftFile(draft);
   const format = draft.format;
   useEffect(() => {
@@ -106,7 +99,13 @@ export default function DraftPreview({draft, page, setPage, onJump, onAdd}: {
     };
     if (format === 'pdf') {
       const task = getDocument({url: file});
-      void task.promise.then(document => {if (!controller.signal.aborted) setPdf(document);}).catch(fail);
+      void task.promise.then(async document => {
+        const base = (await document.getPage(1)).getViewport({scale: 1});
+        if (!controller.signal.aborted) {
+          storeAspect(1, base.width / base.height);
+          setPdf(document);
+        }
+      }).catch(fail);
       return () => {controller.abort(); void task.destroy();};
     }
     void fetch(file, {signal: controller.signal}).then(response => {
@@ -114,35 +113,100 @@ export default function DraftPreview({draft, page, setPage, onJump, onAdd}: {
       return readHtml(format, response);
     }).then(preview => {if (!controller.signal.aborted) setHtml(preview);}).catch(fail);
     return () => controller.abort();
-  }, [file, format]);
+  }, [file, format, storeAspect]);
+
+  const scrollToPage = useCallback((target: number) => {
+    const root = scroller.current;
+    const sheet = stage.current?.children[target - 1];
+    if (root && sheet) root.scrollTop += sheet.getBoundingClientRect().top - root.getBoundingClientRect().top;
+  }, []);
+  useLayoutEffect(() => {
+    if (pdf && mode === 'scroll') scrollToPage(pendingPage.current);
+  }, [mode, pdf, scrollToPage]);
+
   if (error) return <p role="alert">无法预览导入稿。{error}</p>;
   if (!pdf && !html) return <p role="status">正在读取导入稿…</p>;
   const total = pdf?.numPages ?? html?.pages.length ?? 1;
-  const links = draft.links.filter(link => link.anchor === page);
+  const current = Math.min(total, page);
+  const scrolling = Boolean(pdf && mode === 'scroll' && total > 1);
+  const links = draft.links.filter(link => link.anchor === current);
+  const changePage = (target: number) => {
+    if (target < 1 || target > total || !Number.isInteger(target)) return;
+    pendingPage.current = target;
+    if (scrolling) scrollToPage(target);
+    setPage(target);
+  };
+  const startEditor = (link?: DraftLink) => {
+    setEditor(link ? {...link} : {anchor: current, page: 0, label: '', rect: pdf ? defaultDraftRect : undefined});
+    setPlacing(Boolean(pdf));
+    setLinkError('');
+  };
+  const closeEditor = () => {setEditor(undefined); setPlacing(false);};
+  const commit = async (action: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true); setLinkError('');
+    try {await action(); closeEditor();}
+    catch (reason) {setLinkError(reason instanceof Error ? reason.message : '保存跳转失败。');}
+    finally {setBusy(false);}
+  };
+  function renderSheet(number: number) {
+    if (!pdf) return null;
+    const isEditorPage = editor?.anchor === number;
+    return <DraftPdfSheet key={number} pdf={pdf} number={number} aspect={aspects[number] ?? aspects[1] ?? 0.707}
+      visible={!scrolling || Math.abs(current - number) <= 2} editing={Boolean(isEditorPage && placing && !busy)}
+      rect={isEditorPage ? editor?.rect : undefined} links={draft.links.filter(link => link.anchor === number)}
+      onAspect={storeAspect} onPlace={rect => {setEditor(previous => previous && {...previous, rect}); setPlacing(false);}} onJump={onJump}/>;
+  }
   return <>
     <div className="chapter-draft-controls">
-      {total > 1 && <><button type="button" disabled={page <= 1 || busy} onClick={() => setPage(page - 1)}>上一页</button>
-        <label>导入稿页码 <input aria-label="导入稿页码" type="number" min={1} max={total} value={page} disabled={busy}
-          onChange={event => {const value = event.currentTarget.valueAsNumber; if (Number.isInteger(value) && value >= 1 && value <= total) setPage(value);}}/> / {total}</label>
-        <button type="button" disabled={page >= total || busy} onClick={() => setPage(page + 1)}>下一页</button></>}
-      <button type="button" onClick={() => {setEditing(!editing); setLinkError('');}}>添加教材页码跳转</button>
+      {pdf && total > 1 && <label>翻页方式 <select aria-label="导入稿翻页方式" value={mode} disabled={busy || Boolean(editor)}
+        onChange={event => {
+          const next = event.currentTarget.value === 'scroll' ? 'scroll' : 'click';
+          pendingPage.current = current;
+          setMode(next); localStorage.setItem('draft-pdf-page-mode', next);
+        }}><option value="click">点击翻页</option><option value="scroll">滑动翻页</option></select></label>}
+      {total > 1 && <><button type="button" disabled={current <= 1 || busy || Boolean(editor)} onClick={() => changePage(current - 1)}>上一页</button>
+        <label>导入稿页码 <input aria-label="导入稿页码" type="number" min={1} max={total} value={current} disabled={busy || Boolean(editor)}
+          onChange={event => changePage(event.currentTarget.valueAsNumber)}/> / {total}</label>
+        <button type="button" disabled={current >= total || busy || Boolean(editor)} onClick={() => changePage(current + 1)}>下一页</button></>}
+      <button type="button" disabled={busy || Boolean(editor)} onClick={() => startEditor()}>添加教材页码跳转</button>
     </div>
-    {editing && <form className="chapter-draft-controls" key={page} onSubmit={async event => {
+    {editor && <form aria-label="教材页码跳转编辑" className="chapter-draft-controls chapter-draft-editor" onSubmit={event => {
       event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      setBusy(true); setLinkError('');
-      try {
-        await onAdd({anchor: page, page: Number(form.get('page')), label: String(form.get('label') || '').trim()});
-        setEditing(false);
-      } catch (reason) {setLinkError(reason instanceof Error ? reason.message : '保存跳转失败。');}
-      finally {setBusy(false);}
-    }}><label>教材 PDF 页码 <input name="page" type="number" min="1" step="1" required/></label>
-      <label>按钮名称 <input name="label" maxLength={100} placeholder="可选"/></label>
-      <button disabled={busy}>保存跳转</button>{linkError && <span role="alert">{linkError}</span>}</form>}
-    {links.length > 0 && <div className="chapter-draft-controls" aria-label="本页的教材跳转">{links.map((link, index) => {
-      const title = `教材 PDF 第 ${link.page} 页`;
-      return <button type="button" key={index} title={title} onClick={() => onJump(link.page, link.label || title)}>{link.label || title}</button>;
-    })}</div>}
-    {pdf ? <PdfPage key={page} pdf={pdf} number={page}/> : html && <HtmlPage html={html.pages[page - 1]} styles={html.styles} word={format === 'docx'}/>}
+      const {id, ...link} = editor;
+      void commit(() => onSave(link, id));
+    }}>
+      <strong>导入稿第 {editor.anchor} 页</strong>
+      <label>教材 PDF 页码 <input name="page" type="number" min="1" step="1" required value={editor.page || ''}
+        onChange={event => setEditor({...editor, page: event.currentTarget.valueAsNumber || 0})}/></label>
+      <label>按钮名称 <input name="label" maxLength={100} placeholder="可选" value={editor.label}
+        onChange={event => setEditor({...editor, label: event.currentTarget.value})}/></label>
+      {pdf && <button type="button" aria-pressed={placing} disabled={busy} onClick={() => {
+        if (scrolling) scrollToPage(editor.anchor);
+        setPlacing(!placing);
+      }}>{placing ? '正在定位' : '在 PDF 上定位或调整大小'}</button>}
+      <button type="submit" disabled={busy}>保存跳转</button>
+      <button type="button" disabled={busy} onClick={closeEditor}>取消</button>
+      {placing && <span role="status">在本页点击放置，或拖出矩形自定大小。</span>}
+    </form>}
+    {linkError && <p role="alert">{linkError}</p>}
+    {links.length > 0 && <details className="chapter-draft-link-list" open={!pdf || links.some(link => !link.rect) ? true : undefined}>
+      <summary>管理本页跳转（{links.length}）</summary>
+      {links.map(link => <div className="chapter-draft-controls" key={link.id}>
+        {pdf && link.rect ? <span>{draftLinkLabel(link)}</span> :
+          <button type="button" onClick={() => onJump(link.page, draftLinkLabel(link))}>{draftLinkLabel(link)}</button>}
+        <button type="button" disabled={busy || Boolean(editor)} onClick={() => startEditor(link.rect || !pdf ? link : {...link, rect: defaultDraftRect})}>编辑跳转</button>
+        <button type="button" disabled={busy || Boolean(editor)} onClick={() => void commit(() => onDelete(link.id))}>删除跳转</button>
+      </div>)}
+    </details>}
+    {scrolling ? <div className="chapter-draft-scroll" aria-label="滑动翻阅导入稿" ref={scroller} tabIndex={0}
+      onScroll={event => {
+        const root = event.currentTarget;
+        if (!stage.current || !root.clientHeight) return;
+        const point = root.getBoundingClientRect().top + root.clientHeight * .22;
+        const next = Number(pageAtViewportY(stage.current, point, true)?.page.dataset.pageNumber);
+        if (next && next !== current) setPage(next);
+      }}><div className="chapter-draft-stage" ref={stage}>{Array.from({length: total}, (_, index) => renderSheet(index + 1))}</div></div>
+      : pdf ? renderSheet(current) : html && <HtmlPage html={html.pages[current - 1]} styles={html.styles} word={format === 'docx'}/>}
   </>;
 }

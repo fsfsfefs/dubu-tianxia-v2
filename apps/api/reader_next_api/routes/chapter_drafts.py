@@ -1,25 +1,23 @@
 """Store external chapter drafts independently of generated summaries."""
 import json
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
 from pypdf import PdfReader
 from starlette.responses import Response
 
-from ..chapter_drafts import DRAFT_TYPES, MAX_DRAFT_BYTES, validate_draft
+from ..chapter_drafts import DRAFT_TYPES, MAX_DRAFT_BYTES, DraftLink, validate_draft
 
 METADATA = "id,document_id,chapter_key,chapter_title,start_page,end_page,depth,filename,format,links,created_at"
 
 
-class DraftLink(BaseModel):
-    anchor: int = Field(ge=1, le=100000)
-    page: int = Field(ge=1)
-    label: str = Field(default="", max_length=100)
-
-
 def describe(row):
-    return {**dict(row), "links": json.loads(row["links"])}
+    links = json.loads(row["links"])
+    for index, link in enumerate(links):
+        if "id" not in link:
+            source = json.dumps(link, sort_keys=True)
+            link["id"] = str(uuid5(NAMESPACE_URL, f"chapter-draft:{row['id']}:{index}:{source}"))
+    return {**dict(row), "links": links}
 
 
 def create_router(runtime):
@@ -82,21 +80,43 @@ def create_router(runtime):
             "X-Content-Type-Options": "nosniff", "Content-Disposition": "attachment",
         })
 
-    @router.post("/{draft_id}/links", status_code=201)
-    def add_link(document_id: str, draft_id: str, link: DraftLink):
-        if link.page > page_count(document_id):
+    def change_link(document_id, draft_id, link_id=None, link=None):
+        if link is not None and link.page > page_count(document_id):
             raise HTTPException(422, "跳转页码超出教材范围。")
         with runtime.repository.connect() as connection:
-            row = connection.execute(f"""
-                UPDATE chapter_drafts
-                SET links=json_insert(links, '$[#]', json(?))
-                WHERE document_id=? AND id=? AND json_array_length(links)<500
-                RETURNING {METADATA}
-            """, (link.model_dump_json(), document_id, draft_id)).fetchone()
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(f"SELECT {METADATA} FROM chapter_drafts WHERE document_id=? AND id=?",
+                                     (document_id, draft_id)).fetchone()
             if row is None:
-                exists = connection.execute("SELECT 1 FROM chapter_drafts WHERE document_id=? AND id=?",
-                                            (document_id, draft_id)).fetchone()
-                raise HTTPException(422 if exists else 404, "每份导入稿最多添加 500 个跳转。" if exists else "导入稿不存在。")
-            return {"draft": describe(row)}
+                raise HTTPException(404, "导入稿不存在。")
+            draft = describe(row)
+            links = draft["links"]
+            if link_id is None:
+                if len(links) >= 500:
+                    raise HTTPException(422, "每份导入稿最多添加 500 个跳转。")
+                links.append({"id": str(uuid4()), **link.model_dump(exclude_none=True)})
+            else:
+                index = next((index for index, item in enumerate(links) if item["id"] == link_id), None)
+                if index is None:
+                    raise HTTPException(404, "跳转不存在。")
+                if link is None:
+                    links.pop(index)
+                else:
+                    links[index] = {"id": link_id, **link.model_dump(exclude_none=True)}
+            connection.execute("UPDATE chapter_drafts SET links=? WHERE document_id=? AND id=?",
+                               (json.dumps(links, ensure_ascii=False), document_id, draft_id))
+            return {"draft": draft}
+
+    @router.post("/{draft_id}/links", status_code=201)
+    def add_link(document_id: str, draft_id: str, link: DraftLink):
+        return change_link(document_id, draft_id, link=link)
+
+    @router.put("/{draft_id}/links/{link_id}")
+    def edit_link(document_id: str, draft_id: str, link_id: str, link: DraftLink):
+        return change_link(document_id, draft_id, link_id, link)
+
+    @router.delete("/{draft_id}/links/{link_id}")
+    def delete_link(document_id: str, draft_id: str, link_id: str):
+        return change_link(document_id, draft_id, link_id)
 
     return router

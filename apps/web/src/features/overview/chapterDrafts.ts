@@ -1,6 +1,8 @@
 import {useEffect, useState} from 'react';
 
-export type DraftLink = {anchor: number; page: number; label: string};
+export type DraftRect = {x: number; y: number; width: number; height: number};
+export type DraftLinkInput = {anchor: number; page: number; label: string; rect?: DraftRect};
+export type DraftLink = DraftLinkInput & {id: string};
 export type DraftScope = {chapter_key: string; chapter_title: string; start_page: number; end_page?: number; depth: number};
 export type ChapterDraft = Required<DraftScope> & {
   id: string; document_id: string; filename: string; format: 'pdf' | 'docx' | 'md' | 'txt'; links: DraftLink[];
@@ -43,6 +45,13 @@ export function useChapterDrafts(documentId?: string) {
     return draft;
   }
 
+  async function changeLink(draft: ChapterDraft, method: 'POST' | 'PUT' | 'DELETE', id?: string, link?: DraftLinkInput) {
+    const url = `${endpoint(draft.document_id)}/${draft.id}/links${id ? '/' + encodeURIComponent(id) : ''}`;
+    return record((await result<{draft: ChapterDraft}>(await fetch(url, {
+      method, ...(link ? {headers: {'Content-Type': 'application/json'}, body: JSON.stringify(link)} : {}),
+    }))).draft);
+  }
+
   return {
     drafts: snapshot.id === documentId ? snapshot.items : [], error, selection,
     previewPages, setPreviewPage: (id: string, page: number) => setPreviewPages(previous => ({...previous, [id]: page})),
@@ -55,11 +64,8 @@ export function useChapterDrafts(documentId?: string) {
       form.set('file', file);
       return record((await result<{draft: ChapterDraft}>(await fetch(endpoint(documentId), {method: 'POST', body: form}))).draft);
     },
-    async addLink(draft: ChapterDraft, link: DraftLink) {
-      return record((await result<{draft: ChapterDraft}>(await fetch(`${endpoint(draft.document_id)}/${draft.id}/links`, {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(link),
-      }))).draft);
-    },
+    saveLink: (draft: ChapterDraft, link: DraftLinkInput, id?: string) => changeLink(draft, id ? 'PUT' : 'POST', id, link),
+    deleteLink: (draft: ChapterDraft, id: string) => changeLink(draft, 'DELETE', id),
   };
 }
 export type ChapterDrafts = ReturnType<typeof useChapterDrafts>;

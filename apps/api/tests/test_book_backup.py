@@ -183,10 +183,32 @@ def test_import_preserves_conflicting_model_and_rebuilds_only_book_vectors(tmp_p
         assert all(r[0]==target.embedding_models.active_key for r in c.execute("SELECT embedding_model FROM rag_chunks WHERE document_id=?",(report["document_id"],)))
     assert target.search_rag(report["document_id"],"虚拟内存")
 
+def test_legacy_draft_links_can_be_deleted_by_stable_id(tmp_path):
+    with TestClient(create_app(tmp_path)) as client:
+        repo = client.app.state.runtime.repository
+        doc = repo.add_document("教材.pdf", b"%PDF-1.7 fixture")
+        legacy = {"anchor": 1, "page": 1, "label": "旧跳转"}
+        with repo.connect() as connection:
+            connection.execute("""INSERT INTO chapter_drafts
+                (id,document_id,chapter_key,chapter_title,start_page,end_page,depth,filename,format,data,links)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                ("draft", doc["id"], doc["id"] + ":ch-example", "小章", 1, 1, 1, "稿.txt", "txt", b"text",
+                 json.dumps([legacy, legacy])))
+        url = f"/api/documents/{doc['id']}/chapter-drafts"
+        first, second = client.get(url).json()["drafts"][0]["links"]
+        assert first["id"] != second["id"]
+        removed = client.delete(f"{url}/draft/links/{first['id']}")
+        assert removed.status_code == 200
+        assert removed.json()["draft"]["links"] == [second]
+        assert client.get(url).json()["drafts"][0]["links"] == [second]
+
+
 def test_book_backup_roundtrips_chapter_drafts(tmp_path):
     source, doc, _ = seed(tmp_path / "source")
     text = "# 对照稿\n保留原文件".encode()
-    links = [{"anchor": 1, "page": 2, "label": "看教材"}]
+    links = [{"anchor": 1, "page": 2, "label": "看教材",
+              "id": "12345678-1234-4234-a234-123456789abc",
+              "rect": {"x": .2, "y": .3, "width": .4, "height": .05}}]
     with source.connect() as connection:
         connection.execute("""INSERT INTO chapter_drafts
             (id,document_id,chapter_key,chapter_title,start_page,end_page,depth,filename,format,data,links)

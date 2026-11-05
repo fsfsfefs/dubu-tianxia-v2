@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from .chapter_drafts import validate_draft
+from .chapter_drafts import DraftLink, validate_draft
 from .domain import ModelProfile
 from .compatibility import normalize_legacy_chapters
 from .note_images import MAX_NOTE_IMAGES, validate_note_image
@@ -139,12 +139,16 @@ def inspect_book_backup(path, staging):
         try:
             validate_draft(row["format"], base64.b64decode(row["data"], validate=True))
             links = json.loads(row["links"])
-            if not isinstance(links, list) or len(links) > 500 or any(
-                not isinstance(link, dict) or type(link.get("page")) is not int or link["page"] < 1
-                or type(link.get("anchor")) is not int or not 1 <= link["anchor"] <= 100000
-                or not isinstance(link.get("label"), str) or len(link["label"]) > 100 for link in links
-            ):
+            if not isinstance(links, list) or len(links) > 500:
                 raise ValueError("无效跳转。")
+            ids = set()
+            for link in links:
+                DraftLink.model_validate(link, strict=True)
+                if "id" in link:
+                    link_id = link["id"]
+                    if not isinstance(link_id, str) or not re.fullmatch(r"[0-9a-f-]{36}", link_id) or link_id in ids:
+                        raise ValueError("无效跳转标识。")
+                    ids.add(link_id)
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("导入稿备份数据无效。") from error
     image_files=set()
