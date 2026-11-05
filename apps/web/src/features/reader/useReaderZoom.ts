@@ -2,12 +2,13 @@ import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import type {RefObject,Dispatch,SetStateAction} from 'react';
 import {penInContact} from './annotationInput';
 import {pageAtViewportY} from './pageViewport';
+import {horizontalPanOrigin, touchMomentum} from './touchPan';
 export const clampZoom=(value:number)=>Math.max(.5,Math.min(3,Math.round(value*1000)/1000));
 export function pageContentTop(root:HTMLElement,page:HTMLElement){return page.getBoundingClientRect().top-root.getBoundingClientRect().top+root.scrollTop-root.clientTop;}
 type Point={x:number;y:number};
 type Anchor={page:number;x:number;y:number;client:Point};
 type PanStart={start:Point;scrollX:number;scrollY:number};
-type Contact=PanStart&{point:Point;delegate:boolean;dragging:boolean;lastMove:number;velocity:Point};
+type Contact=PanStart&{point:Point;delegate:boolean;dragging:boolean;lastMove:number;velocity:Point;horizontalOrigin:number|null;verticalExtent:number};
 type Session={kind:'wheel'|'touch';base:number;value:number;anchor:Anchor;center:Point;distance:number};
 type Options={documentId:string;enabled:boolean;zoom:number;setZoom:Dispatch<SetStateAction<number>>;root:RefObject<HTMLDivElement|null>;stage:RefObject<HTMLDivElement|null>;status:RefObject<HTMLOutputElement|null>;touchWrites:boolean;regionMode:boolean;onTouchGesture:()=>void};
 function findAnchor(stage:HTMLElement,point:Point):Anchor|null{
@@ -47,7 +48,7 @@ export function useReaderZoom(options:Options){
   const show=(value:number)=>{const status=options.status.current;if(!status)return;status.textContent=`${Math.round(value*100)}%`;status.dataset.visible='true';clearTimeout(statusTimer);statusTimer=setTimeout(()=>delete status.dataset.visible,750);};
   const stopMomentum=()=>{if(momentumFrame!==null)cancelAnimationFrame(momentumFrame);momentumFrame=null;};
   const clear=()=>{stopMomentum();clearTimeout(wheelTimer);session=null;clearPreview();};
-  const startMomentum=(velocity:Point)=>{
+  const startMomentum=(velocity:ReturnType<typeof touchMomentum>)=>{
    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches || Math.hypot(velocity.x,velocity.y)<.14)return;
    let {scrollLeft:x,scrollTop:y}=root;
    let vx=velocity.x,vy=velocity.y,last=performance.now();
@@ -58,7 +59,7 @@ export function useReaderZoom(options:Options){
     const nextX=x+vx*elapsed,nextY=y+vy*elapsed;
     x=Math.max(0,Math.min(maxX,nextX));y=Math.max(0,Math.min(maxY,nextY));
     root.scrollLeft=x;root.scrollTop=y;
-    const decay=Math.exp(-elapsed/135);
+    const decay=Math.exp(-elapsed/velocity.decayTime);
     vx=x===nextX?vx*decay:0;vy=y===nextY?vy*decay:0;
     if(Math.hypot(vx,vy)>=.035)momentumFrame=requestAnimationFrame(step);
    };
@@ -128,7 +129,7 @@ export function useReaderZoom(options:Options){
    const target=event.target instanceof Element?event.target:null;
    const delegate=!!target?.closest('.region-capture') && config.current.regionMode || !!target?.closest('.annotation-layer.active') && config.current.touchWrites;
    const start=panFrom(event);
-   contacts.set(event.pointerId,{...start,point:start.start,delegate,dragging:false,lastMove:event.timeStamp,velocity:{x:0,y:0}});
+   contacts.set(event.pointerId,{...start,point:start.start,delegate,dragging:false,lastMove:event.timeStamp,velocity:{x:0,y:0},horizontalOrigin:null,verticalExtent:0});
    if(contacts.size>=2){
     event.preventDefault();event.stopPropagation();cancelTouchDrawing();locked=true;
     for(const id of contacts.keys())capture(id);
@@ -157,14 +158,20 @@ export function useReaderZoom(options:Options){
     return;
    }
    if(contact.delegate)return;
+   const dx=event.clientX-contact.start.x,dy=event.clientY-contact.start.y;
+   const previousOrigin=contact.horizontalOrigin;
+   contact.verticalExtent=Math.max(contact.verticalExtent,Math.abs(dy));
+   contact.horizontalOrigin ??= horizontalPanOrigin(dx,contact.verticalExtent);
+   // Subtract the unlock distance so the page does not jump sideways at the threshold.
+   const horizontal=contact.horizontalOrigin===null ? 0 : dx-contact.horizontalOrigin;
+   const previousHorizontal=previousOrigin===null ? 0 : previous.x-contact.start.x-previousOrigin;
    const elapsed=Math.max(8,event.timeStamp-contact.lastMove);
    const speed=(delta:number)=>Math.max(-2.8,Math.min(2.8,delta/elapsed));
-   contact.velocity={x:speed(previous.x-contact.point.x),y:speed(previous.y-contact.point.y)};
+   contact.velocity={x:speed(previousHorizontal-horizontal),y:speed(previous.y-contact.point.y)};
    contact.lastMove=event.timeStamp;
-   const dx=event.clientX-contact.start.x,dy=event.clientY-contact.start.y;
-   if(!contact.dragging && Math.hypot(dx,dy)<5)return;
+   if(!contact.dragging && Math.hypot(horizontal,dy)<5)return;
    if(!contact.dragging){contact.dragging=true;capture(event.pointerId);cancelTouchDrawing();window.getSelection()?.removeAllRanges();}
-   stopEvent(event);pan(contact,dx,dy);
+   stopEvent(event);pan(contact,horizontal,dy);
   };
   const end=(event:PointerEvent)=>{
    if(event.pointerType==='pen'){pens.delete(event.pointerId);return;}
@@ -175,7 +182,9 @@ export function useReaderZoom(options:Options){
    if(locked || contact.dragging){event.preventDefault();event.stopPropagation();}
    contacts.delete(event.pointerId);
    if(session?.kind==='touch' && contacts.size<2){if(event.type==='pointercancel')clear();else finish();}
-   if(!locked && contact.dragging && event.type==='pointerup' && event.timeStamp-contact.lastMove<90)startMomentum(contact.velocity);
+   if(!locked && contact.dragging && event.type==='pointerup' && event.timeStamp-contact.lastMove<90){
+    startMomentum(touchMomentum(contact.velocity,contact.point.y-contact.start.y,contact.horizontalOrigin!==null));
+   }
    if(!contacts.size)locked=false;
   };
   const blur=()=>{clear();stopMousePan();contacts.clear();blockedTouches.clear();pens.clear();locked=false;};

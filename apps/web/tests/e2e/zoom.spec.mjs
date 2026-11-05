@@ -61,9 +61,15 @@ test('touch pinch and one-finger pan work with pen-only mode and cancel unfinish
  await expect.poll(async()=>{const after=await paper.boundingBox();return Math.abs(after.y+after.height*fraction-y);}).toBeLessThan(5);
  expect((await list()).length).toBe(initial);
  await page.getByLabel('仅手写笔',{exact:true}).check();
- const root=page.locator('.pdf-scroll'),scroll=await root.evaluate(el=>({x:el.scrollLeft,y:el.scrollTop}));
+ const root=page.locator('.pdf-scroll'),verticalStart=await root.evaluate(el=>({x:el.scrollLeft,y:el.scrollTop}));
  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:450,y:500,id:1}]});
- await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:380,y:380,id:1}]});
+ await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:437,y:410,id:1}]});
+ await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await expect.poll(()=>root.evaluate(el=>el.scrollTop)).toBeGreaterThan(verticalStart.y+80);
+ expect(await root.evaluate(el=>el.scrollLeft)).toBe(verticalStart.x);
+ await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:450,y:500,id:1}]});
+ const scroll=await root.evaluate(el=>({x:el.scrollLeft,y:el.scrollTop}));
+ await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:350,y:380,id:1}]});
  const beforeLift=await root.evaluate(el=>el.scrollTop);
  await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  await expect.poll(()=>root.evaluate(el=>el.scrollTop)).toBeGreaterThan(beforeLift+8);
