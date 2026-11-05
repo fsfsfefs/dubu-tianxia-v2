@@ -358,3 +358,4 @@ justify-self:start}
 .library-grid .library-book .book-open{align-self:end}
 .library-book .book-cover-button,.continue-row .book-cover-button{padding:0;border:1px solid #d4d8ca;background:#e4e6d9;color:#425646;cursor:pointer}
 .library-book .book-cover-button:hover,.continue-row .book-cover-button:hover{border-color:#90a58e;background:#dce8d6}
+.book-list-original .library-book{cursor:pointer}
