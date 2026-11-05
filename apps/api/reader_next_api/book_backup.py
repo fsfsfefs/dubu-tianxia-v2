@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from .chapter_drafts import validate_draft
 from .domain import ModelProfile
 from .compatibility import normalize_legacy_chapters
 from .note_images import MAX_NOTE_IMAGES, validate_note_image
@@ -17,7 +18,7 @@ from .note_images import MAX_NOTE_IMAGES, validate_note_image
 FORMAT = "reader-next-book-backup"
 TABLES = ("notes", "note_images", "chat_messages", "saved_chats", "reading_positions", "highlights", "flashcards",
           "ocr_pages", "summary_gaps", "summary_checkpoints", "chapter_summaries",
-          "document_outlines", "background_tasks", "rag_chunks")
+          "document_outlines", "background_tasks", "rag_chunks", "chapter_drafts")
 MAX_ARCHIVE = 1024 * 1024 * 1024
 LIMITS = {"manifest.json": 1024 * 1024, "book.json": 128 * 1024 * 1024, "document.pdf": 512 * 1024 * 1024}
 
@@ -42,6 +43,10 @@ def create_book_backup(repo, document_id, destination, *, summary_profile_id=Non
         for row in tables["rag_chunks"]:
             if row["embedding"] is not None:
                 row["embedding"] = base64.b64encode(row["embedding"]).decode()
+        for row in tables["chapter_drafts"]:
+            row["data"] = base64.b64encode(row["data"]).decode()
+        if not tables["chapter_drafts"]:
+            tables.pop("chapter_drafts")
         image_payloads = {}
         for index,row in enumerate(tables["note_images"]):
             name=f"note-images/{index}.bin"
@@ -69,7 +74,7 @@ def create_book_backup(repo, document_id, destination, *, summary_profile_id=Non
     pdf = repo.document_path(document_id)
     if len(raw) > LIMITS["book.json"] or pdf.stat().st_size > LIMITS["document.pdf"]:
         raise ValueError("单书备份超过限制（PDF512MB，学习数据128MB）。")
-    manifest = {"format": FORMAT, "version": 4 if has_explanations else 3 if tables.get("saved_chats") else 2 if image_payloads else 1, "credentials_included": False, "shared_models_included": False, "created_at": datetime.now(timezone.utc).isoformat(),
+    manifest = {"format": FORMAT, "version": 5 if tables.get("chapter_drafts") else 4 if has_explanations else 3 if tables.get("saved_chats") else 2 if image_payloads else 1, "credentials_included": False, "shared_models_included": False, "created_at": datetime.now(timezone.utc).isoformat(),
                 "files": {"book.json": {"size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()},
                           "document.pdf": {"size": pdf.stat().st_size, "sha256": digest(pdf)}}}
     for name,content in image_payloads.items():
@@ -98,7 +103,7 @@ def inspect_book_backup(path, staging):
             if entry.file_size > LIMITS.get(entry.filename,MAX_NOTE_IMAGES) or entry.flag_bits & 1:
                 raise ValueError("备份文件过大或已加密。")
         manifest = json.loads(archive.read("manifest.json"))
-        if manifest.get("format") != FORMAT or manifest.get("version") not in {1,2,3,4}:
+        if manifest.get("format") != FORMAT or manifest.get("version") not in {1,2,3,4,5}:
             raise ValueError("请选择受支持的单书完整备份ZIP。")
         if set(manifest.get("files", {})) != names - {"manifest.json"}:
             raise ValueError("备份清单无效。")
@@ -130,6 +135,18 @@ def inspect_book_backup(path, staging):
         explanation = row.get("explanation", "")
         if not isinstance(explanation, str) or len(explanation) > 12000:
             raise ValueError("答题卡片解释无效。")
+    for row in data["tables"]["chapter_drafts"]:
+        try:
+            validate_draft(row["format"], base64.b64decode(row["data"], validate=True))
+            links = json.loads(row["links"])
+            if not isinstance(links, list) or len(links) > 500 or any(
+                not isinstance(link, dict) or type(link.get("page")) is not int or link["page"] < 1
+                or type(link.get("anchor")) is not int or not 1 <= link["anchor"] <= 100000
+                or not isinstance(link.get("label"), str) or len(link["label"]) > 100 for link in links
+            ):
+                raise ValueError("无效跳转。")
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("导入稿备份数据无效。") from error
     image_files=set()
     for row in data["tables"]["note_images"]:
         name=row.pop("data_file",None)
@@ -248,6 +265,8 @@ def install_book_backup(repo, data, pdf, *, replace_existing=False):
                         if not plain.startswith(source["id"] + ":"):
                             raise ValueError("章节标识与教材不匹配。")
                         row["chapter_key"] = prefix + document_id + plain[len(source["id"]):]
+                    if table == "chapter_drafts":
+                        row["data"] = base64.b64decode(row["data"], validate=True)
                     if table == "background_tasks":
                         row["result_json"] = json.dumps(_remap_result(json.loads(row.get("result_json", "{}")), source["id"], document_id, profiles), ensure_ascii=False)
                         if row["status"] in {"queued", "running", "cancelling", "paused"}:

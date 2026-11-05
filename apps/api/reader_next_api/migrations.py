@@ -224,7 +224,25 @@ def _flashcard_explanations(connection):
         connection.execute("ALTER TABLE flashcards ADD COLUMN explanation TEXT NOT NULL DEFAULT ''")
 
 
-MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images), (4, 'saved chats', _saved_chats), (5, 'flashcard explanations', _flashcard_explanations))
+def _chapter_drafts(connection):
+    connection.execute("""CREATE TABLE IF NOT EXISTS chapter_drafts (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+        chapter_key TEXT NOT NULL,
+        chapter_title TEXT NOT NULL,
+        start_page INTEGER NOT NULL,
+        end_page INTEGER NOT NULL,
+        depth INTEGER NOT NULL,
+        filename TEXT NOT NULL,
+        format TEXT NOT NULL,
+        links TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        data BLOB NOT NULL
+    )""")
+    connection.execute("CREATE INDEX IF NOT EXISTS chapter_drafts_document ON chapter_drafts(document_id)")
+
+
+MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images), (4, 'saved chats', _saved_chats), (5, 'flashcard explanations', _flashcard_explanations), (6, 'chapter drafts', _chapter_drafts))
 
 
 def migrate(connection, migrations=MIGRATIONS):

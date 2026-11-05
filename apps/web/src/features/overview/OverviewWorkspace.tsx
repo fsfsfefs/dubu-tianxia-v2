@@ -1,11 +1,13 @@
 import {useState} from 'react';
+import {DraftPicker} from './DraftPicker';
+import type {ChapterDrafts} from './chapterDrafts';
 import {OutlineEditor} from '../outline/OutlineEditor';
 import type {ReactNode} from 'react';
 import type {DocumentRecord, Note, Flashcard} from '../../api';
 import {chapterKey} from '../../chapters';
 import {describeTaskError, useOverview} from './useOverview';
-type Props = {model: ReturnType<typeof useOverview>; activeDocument: DocumentRecord; currentPage: number; notes: Note[]; flashcards: Flashcard[]; goBack: () => void; enterReader: (document?: DocumentRecord | null, page?: number) => void; openMemory: () => void; header: ReactNode; settings: ReactNode};
-export function OverviewWorkspace({model, activeDocument, currentPage, notes, flashcards, goBack, enterReader, openMemory, header, settings}: Props) {
+type Props = {draftModel: ChapterDrafts; model: ReturnType<typeof useOverview>; activeDocument: DocumentRecord; currentPage: number; notes: Note[]; flashcards: Flashcard[]; goBack: () => void; enterReader: (document?: DocumentRecord | null, page?: number) => void; openMemory: () => void; header: ReactNode; settings: ReactNode};
+export function OverviewWorkspace({draftModel, model, activeDocument, currentPage, notes, flashcards, goBack, enterReader, openMemory, header, settings}: Props) {
   const [outlineEditorOpen,setOutlineEditorOpen]=useState(false);
   const {summaryProfiles, summaryProfileId, setSummaryProfileId, summaryModelLocked, importGapSummary, importLearningStructureFile, chapters, chaptersLoading, selectedChapterIndex, setSelectedChapterIndex, summaryGaps, chapterSummaryBusy, chapterSummaryProgress, chapterSummaryDraft, chapterSummaryError, setChapterSummaryError, structureImportStatus, bookGenerationState, generationScope, summarySelection, setSummarySelection, traceLocations, setTraceLocations, traceLoading, traceError, setTraceError, structureFileInput, gapFileInput, gapImportTarget, captureSummarySelection, findSummarySources, openTraceLocation, renderSummaryText, selectedChapter, selectedChapterKey, requestedChapterEndPage, chapterChildren, chapterKind, selectedChapterSummary, selectedChapterGenerated, selectedChapterTask, selectedChapterTaskStopped, bookSummaryKey, bookSummary, chapterNotes, chapterFlashcards, generateChapterStructure, generateBookStructure, pauseBookStructure, cancelBookStructure} = model;
   const importChapterButton = selectedChapter && chapterKind === '小章' ? (
@@ -28,6 +30,15 @@ export function OverviewWorkspace({model, activeDocument, currentPage, notes, fl
       <section className="chapter-detail">
         <div className="chapter-heading"><h2>{selectedChapter?.title || '当前学习结构'}</h2>{selectedChapterGenerated && <p>{chapterKind} · PDF {selectedChapterSummary?.start_page}-{selectedChapterSummary?.end_page}</p>}</div>
         <input ref={gapFileInput} hidden type="file" accept=".md,.txt,text/plain,text/markdown" onChange={event => void importGapSummary(event.target.files?.[0])}/>
+        <DraftPicker key={selectedChapterKey || activeDocument.id} model={draftModel} chapterKey={selectedChapterKey}
+          scope={selectedChapter && chapterKind === '小章' ? {
+            chapter_key: selectedChapterKey, chapter_title: selectedChapter.title, start_page: selectedChapter.page,
+            end_page: requestedChapterEndPage ?? selectedChapterSummary?.end_page, depth: selectedChapter.depth,
+          } : undefined} onJump={(page, label) => {
+            model.setSourceTrace({kind: 'page-reference', query: label, summaryKey: selectedChapterKey,
+              locations: [{page, snippet: label, score: 1}], index: 0});
+            enterReader(activeDocument, page);
+          }}>
         {selectedChapter && !selectedChapterGenerated ? <div className="chapter-structure-empty">
           <p>{chapterKind === '大章' ? `将先生成 ${chapterChildren.length} 个直属子章的总结，再汇总为本大章知识结构。` : `将根据 PDF ${selectedChapter.page}${requestedChapterEndPage ? `-${requestedChapterEndPage}` : ' 至文末'} 的原文生成本小章总结。`}</p>
           {importChapterButton}
@@ -47,6 +58,7 @@ export function OverviewWorkspace({model, activeDocument, currentPage, notes, fl
           <details className="overview-section" open><summary><div><h3>原文阅读与定位</h3><p>本章从 PDF {selectedChapter?.page || currentPage} 开始</p></div><button onClick={event => {event.preventDefault(); enterReader(activeDocument, selectedChapter?.page || currentPage);}}>进入教材 ↗</button></summary><article><span>01</span><div><strong>目录、搜索与原文定位</strong><p>在原始 PDF 中翻页、搜索、框选、选择文字并回到来源。</p></div></article></details>
           <details className="overview-section" open><summary><div><h3>理解与记忆</h3><p>{chapterNotes.length} 条正文记忆 · {chapterFlashcards.length} 条练习记录</p></div></summary><article><span>02</span><div><strong>解释 Assistant / 学习 Master</strong><p>围绕当前章节原文临时提问，重要解释收入学习记忆；练习卡记录掌握状态。</p></div></article></details>
         </>}
+        </DraftPicker>
       </section>
     </div>
   </main>{summarySelection && <aside className="summary-trace-popover" aria-live="polite"><header><div><small>已选择总结文字</small><strong>{summarySelection.text}</strong></div><button aria-label="关闭原文溯源" onClick={() => {setSummarySelection(null); setTraceLocations([]); setTraceError('');}}>×</button></header>{!traceLocations.length && !traceError && <button className="trace-primary" disabled={traceLoading} onClick={() => void findSummarySources()}>{traceLoading ? '正在匹配原文…' : '原文溯源'}</button>}{traceError && <p className="trace-error">{traceError}</p>}{traceLocations.length > 0 && <><p>找到 {traceLocations.length} 处相关原文</p><div className="trace-location-list">{traceLocations.map((location, index) => <button key={`${location.page}-${index}`} onClick={() => openTraceLocation(index)}><strong>PDF 第 {location.page} 页</strong><span>{location.snippet}</span><b>跳转 →</b></button>)}</div></>}</aside>}{outlineEditorOpen && <OutlineEditor key={activeDocument.id} documentId={activeDocument.id} onClose={()=>setOutlineEditorOpen(false)} onSaved={model.acceptEditedOutline}/>}{settings}</div>;

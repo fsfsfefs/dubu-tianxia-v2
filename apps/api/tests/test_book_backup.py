@@ -182,3 +182,25 @@ def test_import_preserves_conflicting_model_and_rebuilds_only_book_vectors(tmp_p
         assert [tuple(r) for r in c.execute("SELECT id,embedding,embedding_model FROM rag_chunks WHERE document_id=?",(other["id"],))]==original_vectors
         assert all(r[0]==target.embedding_models.active_key for r in c.execute("SELECT embedding_model FROM rag_chunks WHERE document_id=?",(report["document_id"],)))
     assert target.search_rag(report["document_id"],"虚拟内存")
+
+def test_book_backup_roundtrips_chapter_drafts(tmp_path):
+    source, doc, _ = seed(tmp_path / "source")
+    text = "# 对照稿\n保留原文件".encode()
+    links = [{"anchor": 1, "page": 2, "label": "看教材"}]
+    with source.connect() as connection:
+        connection.execute("""INSERT INTO chapter_drafts
+            (id,document_id,chapter_key,chapter_title,start_page,end_page,depth,filename,format,data,links)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            ("draft", doc["id"], doc["id"] + ":ch-example", "小章", 1, 2, 1, "稿.md", "md", text, json.dumps(links)))
+    archive = tmp_path / "draft.zip"
+    create_book_backup(source, doc["id"], archive)
+    stage = tmp_path / "stage"
+    data = inspect_book_backup(archive, stage)
+    target = Repository(tmp_path / "target")
+    document_id = install_book_backup(target, data, stage / "document.pdf")["document_id"]
+    with target.connect() as connection:
+        row = connection.execute("SELECT * FROM chapter_drafts WHERE document_id=?", (document_id,)).fetchone()
+        assert row["chapter_key"] == document_id + ":ch-example"
+        assert row["data"] == text
+        assert json.loads(row["links"]) == links
+    assert target.list_chapter_summaries(document_id)[0]["content"] == "总结"

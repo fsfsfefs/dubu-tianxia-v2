@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import sqlite3
 from pathlib import Path
@@ -38,9 +39,11 @@ class DatabaseRepository:
 
 
     def export_data(self) -> dict:
-        tables = ["folders", "documents", "model_profiles", "notes", "chat_messages", "saved_chats", "reading_positions", "highlights", "flashcards", "ocr_pages", "summary_gaps", "summary_checkpoints", "chapter_summaries", "document_outlines", "rag_chunks"]
+        tables = ["folders", "documents", "model_profiles", "notes", "chat_messages", "saved_chats", "reading_positions", "highlights", "flashcards", "ocr_pages", "summary_gaps", "summary_checkpoints", "chapter_summaries", "document_outlines", "rag_chunks", "chapter_drafts"]
         with self.connect() as connection:
             result = {table: [dict(row) for row in connection.execute(f"SELECT * FROM {table}").fetchall()] for table in tables}
+        for item in result["chapter_drafts"]:
+            item["data"] = base64.b64encode(item["data"]).decode()
         for item in result["highlights"]:
             item["rects"] = json.loads(item.pop("rects_json"))
             item["tags"] = json.loads(item.pop("tags_json"))

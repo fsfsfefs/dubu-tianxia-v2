@@ -7,6 +7,7 @@ import './pdf-reader.css';
 import {AnnotationLayer, type InkStyle} from './features/reader/AnnotationLayer';
 import './features/reader/AnnotationLayer.css';
 import {OcrWord, recognizeCanvas} from './ocr';
+import type {ChapterDrafts} from './features/overview/chapterDrafts';
 import {observeNearbyPage} from './features/reader/pageViewport';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -39,6 +40,7 @@ export type ReaderProps = {
   assistantOpen?: boolean;
   notes?: Note[];
   chapterSummaries?: ChapterSummary[];
+  draftModel?: ChapterDrafts;
   onCreatePageNote?: (page: number, content: string, files?: File[]) => Promise<void>;
   onUpdatePageNote?: (note: Note, content: string, files?: File[], keepImageIds?:string[]) => Promise<void>;
   onDeletePageNote?: (note: Note) => Promise<void>;

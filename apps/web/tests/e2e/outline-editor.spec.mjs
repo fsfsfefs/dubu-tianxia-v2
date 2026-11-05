@@ -116,3 +116,61 @@ test('saved leaf summary exposes import beside regenerate', async ({page}, info)
  await expect(actions.getByRole('button', {name:'重新生成', exact:true})).toBeVisible();
  await expect(page.locator('.chapter-summary-content')).toContainText('人工拓展示例');
 });
+
+test('independent drafts preserve the summary, preview PDF and Word images, and jump to the textbook', async ({page}, info) => {
+ const book = await clone(page, 'E2E Bookmarks', 'Independent drafts ' + info.project.name);
+ const base = `/api/documents/${book.id}`;
+ const pdf = await (await page.request.get(base + '/file')).body();
+ const {default: JSZip} = await import('jszip');
+ const word = new JSZip();
+ word.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+ word.file('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+ word.file('word/_rels/document.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="image1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/dot.png"/></Relationships>');
+ word.file('word/media/dot.png', 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1sAAAAASUVORK5CYII=', {base64:true});
+ word.file('word/document.xml', `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>
+   <w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Word 排版正文</w:t></w:r></w:p>
+   <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Word 表格</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+   <w:p><w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="image1"/></pic:blipFill><pic:spPr><a:xfrm><a:ext cx="914400" cy="914400"/></a:xfrm></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>
+   <w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>`);
+ await page.goto('/');
+ await page.locator('.library-book').filter({hasText: book.title}).getByRole('button', {name:/打开教材/}).click();
+ await page.locator('.chapter-entry').filter({hasText:'Original section'}).click();
+ const upload = async (name, buffer) => {
+   const chooser = page.waitForEvent('filechooser');
+   await page.getByRole('button', {name:'导入其他生成', exact:true}).click();
+   await (await chooser).setFiles({name, mimeType:'application/octet-stream', buffer});
+ };
+ const old = page.waitForEvent('filechooser');
+ await page.getByRole('button', {name:'导入小章内容', exact:true}).click();
+ await (await old).setFiles({name:'original.txt', mimeType:'text/plain', buffer:Buffer.from('保留此原总结')});
+ await expect(page.locator('.chapter-summary-content')).toContainText('保留此原总结');
+ await upload('对照稿.pdf', pdf);
+ await expect(page.getByRole('region', {name:'导入稿预览'}).locator('canvas')).toBeVisible();
+ await upload('带图稿.docx', await word.generateAsync({type:'nodebuffer'}));
+ const frame = page.frameLocator('iframe[title="导入稿正文"]');
+ await expect(frame.getByText('Word 排版正文', {exact:true})).toHaveCSS('font-weight', '700');
+ await expect(frame.locator('td')).toContainText('Word 表格');
+ await expect.poll(() => frame.locator('img').evaluate(img => img.naturalWidth)).toBe(1);
+ const versions = page.getByLabel('查看总结版本');
+ await expect(versions.locator('option')).toHaveCount(3);
+ await versions.selectOption('');
+ await expect(page.locator('.chapter-summary-content')).toContainText('保留此原总结');
+ await versions.selectOption({label:'2. 带图稿.docx'});
+ await page.getByRole('button', {name:'添加教材页码跳转'}).click();
+ await page.getByLabel('教材 PDF 页码').fill('1');
+ await page.getByLabel('按钮名称').fill('查看教材第一面');
+ await page.getByRole('button', {name:'保存跳转'}).click();
+ await page.getByRole('button', {name:'查看教材第一面'}).click();
+ await expect(page.getByLabel('PDF页码')).toHaveValue('1');
+ await page.getByRole('button', {name:'返回总结', exact:false}).first().click();
+ await expect(page.getByRole('button', {name:'查看教材第一面'})).toBeVisible();
+ await page.getByRole('button', {name:/继续 PDF/}).click();
+ await page.getByRole('button', {name:'章节总结', exact:true}).click();
+ const panel = page.getByRole('complementary', {name:'PDF章节总结'});
+ await panel.getByLabel('查看章节总结').selectOption({label:'Original section · PDF 2-2'});
+ await expect(panel.getByLabel('查看总结版本').locator('option')).toHaveCount(3);
+ await panel.getByRole('button', {name:'查看教材第一面'}).click();
+ await expect(page.getByLabel('PDF页码')).toHaveValue('1');
+ await page.getByRole('button', {name:'↩ 返回章节总结'}).click();
+ await expect(panel.getByRole('button', {name:'查看教材第一面'})).toBeVisible();
+});
