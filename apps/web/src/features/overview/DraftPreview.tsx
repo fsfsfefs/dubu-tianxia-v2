@@ -4,6 +4,11 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {draftFile, type ChapterDraft, type DraftLink, type DraftLinkInput} from './chapterDrafts';
 
 import {pageAtViewportY} from '../reader/pageViewport';
+import {useDraftInk} from './useDraftInk';
+import {DraftInkTools} from './DraftInkTools';
+import '../../pdf-reader.css';
+import '../reader/AnnotationLayer.css';
+import type {ReaderInkTools} from '../reader/useAnnotations';
 import {useReaderZoom} from '../reader/useReaderZoom';
 import {defaultDraftRect, DraftPdfSheet, draftLinkLabel} from './DraftPdfSheet';
 
@@ -89,11 +94,12 @@ function HtmlPage({html, styles, word, zoom, onWheel}: {
     }}/>;
 }
 
-export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJump, onSave, onDelete, toolsCollapsed}: {
+export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJump, onSave, onDelete, toolsCollapsed, inkTools}: {
   draft: ChapterDraft; page: number; setPage: (page: number) => void; onJump: (page: number, label: string) => void;
-  zoom: number; setZoom: Dispatch<SetStateAction<number>>; toolsCollapsed?: boolean;
+  zoom: number; setZoom: Dispatch<SetStateAction<number>>; toolsCollapsed?: boolean; inkTools?: ReaderInkTools;
   onSave: (link: DraftLinkInput, id?: string) => Promise<unknown>; onDelete: (id: string) => Promise<unknown>;
 }) {
+  const ink = useDraftInk(draft, inkTools);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [pdf, setPdf] = useState<PDFDocumentProxy>();
   const [html, setHtml] = useState<HtmlPreview>();
@@ -112,7 +118,7 @@ export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJum
   const zoomStatus = useRef<HTMLOutputElement>(null);
   const {changeZoom, wheelDirect, setWheelDirect} = useReaderZoom({
     documentId: draft.id, enabled: Boolean(pdf || html), zoom, setZoom, root: scroller, stage, status: zoomStatus,
-    touchWrites: false, regionMode: false, delegateTouch: placing && !toolsCollapsed, wheelStorageKey: 'draft-wheel-zoom',
+    touchWrites: !!ink.tools.annotationTool && !ink.tools.penOnly && !placing, regionMode: false, delegateTouch: placing && !toolsCollapsed, wheelStorageKey: 'draft-wheel-zoom',
     onTouchGesture: () => {if (placing) setPlacing(false);},
   });
   useLayoutEffect(() => {
@@ -192,9 +198,16 @@ export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJum
       renderWidth={viewportWidth * zoom}
       visible={!scrolling || Math.abs(current - number) <= 2} editing={Boolean(isEditorPage && placing && !busy && !toolsCollapsed)}
       rect={isEditorPage && !toolsCollapsed ? editor?.rect : undefined} links={draft.links.filter(link => link.anchor === number)}
-      onAspect={storeAspect} onPlace={rect => {setEditor(previous => previous && {...previous, rect}); setPlacing(false);}} onJump={onJump}/>;
+      ink={ink} onAspect={storeAspect} onPlace={rect => {setEditor(previous => previous && {...previous, rect}); setPlacing(false);}} onJump={onJump}/>;
   }
-  return <>
+  return <div className="chapter-draft-reader" onKeyDownCapture={event => {
+    if (!pdf || !event.ctrlKey || event.shiftKey || event.key.toLowerCase() !== 'z') return;
+    if ((event.target as HTMLElement).closest('input,textarea,[contenteditable="true"]')) return;
+    event.preventDefault(); event.stopPropagation(); void ink.annotations.undoAnnotation();
+  }}>
+    {pdf && <DraftInkTools tools={ink.tools} loaded={ink.loaded} onUndo={() => void ink.annotations.undoAnnotation()}
+      undoDepth={ink.annotations.annotationUndoDepth}/>}
+    {ink.error && <p role="alert">{ink.error}</p>}
     <div className="chapter-draft-controls">
       {pdf && total > 1 && <label>翻页方式 <select aria-label="导入稿翻页方式" value={mode} disabled={busy || Boolean(editor)}
         onChange={event => {
@@ -273,5 +286,5 @@ export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJum
       </div>
       <output className="reader-zoom-status" ref={zoomStatus}/>
     </div>
-  </>;
+  </div>;
 }

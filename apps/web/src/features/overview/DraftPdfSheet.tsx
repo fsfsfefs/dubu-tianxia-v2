@@ -1,5 +1,7 @@
 import {useEffect, useRef, useState, type CSSProperties, type PointerEvent} from 'react';
 import type {PDFDocumentProxy} from 'pdfjs-dist';
+import type {useDraftInk} from './useDraftInk';
+import {AnnotationLayer} from '../reader/AnnotationLayer';
 import type {DraftLink, DraftRect} from './chapterDrafts';
 
 export const defaultDraftRect: DraftRect = {x: .05, y: .05, width: .28, height: .06};
@@ -25,9 +27,9 @@ function rectStyle(rect: DraftRect): CSSProperties {
   return {left: rect.x * 100 + '%', top: rect.y * 100 + '%', width: rect.width * 100 + '%', height: rect.height * 100 + '%'};
 }
 
-export function DraftPdfSheet({pdf, number, aspect, renderWidth, visible, links, editing, rect, onAspect, onPlace, onJump}: {
+export function DraftPdfSheet({pdf, number, aspect, renderWidth, visible, links, editing, rect, ink, onAspect, onPlace, onJump}: {
   pdf: PDFDocumentProxy; number: number; aspect: number; renderWidth: number; visible: boolean;
-  links: DraftLink[]; editing: boolean; rect?: DraftRect;
+  links: DraftLink[]; editing: boolean; rect?: DraftRect; ink: ReturnType<typeof useDraftInk>;
   onAspect: (number: number, aspect: number) => void; onPlace: (rect: DraftRect) => void;
   onJump: (page: number, label: string) => void;
 }) {
@@ -81,6 +83,15 @@ export function DraftPdfSheet({pdf, number, aspect, renderWidth, visible, links,
     {visible && links.map(link => link.rect && <button key={link.id} type="button" className="chapter-draft-overlay" style={rectStyle(link.rect)}
       title={`${draftLinkLabel(link)} · 教材 PDF ${link.page}`} disabled={drawing}
       onClick={() => onJump(link.page, draftLinkLabel(link))}>{draftLinkLabel(link)}</button>)}
+    {visible && <AnnotationLayer documentId={ink.id} page={number}
+      dimensions={{width: 1000, height: 1000 / aspect}} zoom={renderWidth / 1000}
+      highlights={ink.highlights.filter(item => item.page_number === number)}
+      tool={ink.loaded && !editing ? ink.tools.annotationTool : null}
+      color={ink.tools.annotationColor} width={ink.tools.annotationWidth}
+      eraserSize={ink.tools.eraserSize} penOnly={ink.tools.penOnly}
+      draft={ink.annotations.annotationDraft} onDraft={ink.annotations.setAnnotationDraft}
+      onSave={(page, points, style) => {void ink.annotations.saveInkAnnotation(page, points, style);}}
+      onErase={(page, points, dimensions, radius) => ink.annotations.eraseInkAt(page, points, dimensions, radius)}/>}
     {visible && box && <span className="chapter-draft-outline" style={rectStyle(box)} aria-hidden="true"/>}
   </div>;
 }

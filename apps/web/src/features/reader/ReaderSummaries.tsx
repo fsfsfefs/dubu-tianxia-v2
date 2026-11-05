@@ -2,11 +2,12 @@ import {useLayoutEffect, useRef, useState} from 'react';
 import type {ChapterSummary} from '../../api';
 import {DraftPicker} from '../overview/DraftPicker';
 import type {ChapterDrafts} from '../overview/chapterDrafts';
+import type {ReaderInkTools} from './useAnnotations';
 import {SummaryContent} from '../../StructuredContent';
 
-type Props = {active: boolean; page: number; summaries: ChapterSummary[]; draftModel?: ChapterDrafts; onJump: (page: number) => void; onClose: () => void; onPages: () => void; onOutline: () => void};
+type Props = {active: boolean; page: number; summaries: ChapterSummary[]; draftModel?: ChapterDrafts; inkTools?: ReaderInkTools; onJump: (page: number) => void; onClose: () => void; onPages: () => void; onOutline: () => void};
 function historical(key: string) {return !key.endsWith(':__book__') && !key.includes(':ch-');}
-export function ReaderSummaries({active, page, summaries, draftModel, onJump, onClose, onPages, onOutline}: Props) {
+export function ReaderSummaries({active, page, summaries, draftModel, inkTools, onJump, onClose, onPages, onOutline}: Props) {
   const [selectedKey, setSelectedKey] = useState('');
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -44,7 +45,7 @@ export function ReaderSummaries({active, page, summaries, draftModel, onJump, on
     </select></label><button disabled={!current} onClick={() => {setSelectedKey(current?.chapter_key || ''); returnOffset.current=0; if(scroller.current) scroller.current.scrollTop=0;}}>查看本页章节</button></div>
     <div className="reader-summary-content" ref={scroller}>
       {selected && <><h2>{selected.title}</h2><p>PDF {selected.start_page}-{selected.end_page}</p></>}
-      {selected && draftModel ? <DraftPicker key={selected.chapter_key} model={draftModel}
+      {selected && draftModel ? <DraftPicker key={selected.chapter_key} model={draftModel} inkTools={inkTools}
         chapterKey={selected.chapter_key} onJump={jump} toolsCollapsed={toolsCollapsed}>{content}</DraftPicker> : content}
     </div>
   </aside>;

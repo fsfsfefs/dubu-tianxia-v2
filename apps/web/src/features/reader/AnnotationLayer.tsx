@@ -44,7 +44,7 @@ export function AnnotationLayer(props: Props) {
   useEffect(() => () => {cancel(); cursorRef.current = null; setCursor(null);}, [documentId, page, tool, zoom, dimensions.width, dimensions.height, eraserSize, penOnly, surface]);
 
   useEffect(()=>{
-    const root=svg.current?.closest('.pdf-scroll');
+    const root=svg.current?.closest('.pdf-scroll, .chapter-draft-scroll');
     const cancelTouch=()=>{if(gesture.current?.pointerType==='touch')cancel();};
     root?.addEventListener('reader-touch-gesture',cancelTouch);
     return()=>root?.removeEventListener('reader-touch-gesture',cancelTouch);

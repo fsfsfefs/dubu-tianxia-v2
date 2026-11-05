@@ -20,7 +20,7 @@ def test_legacy_database_upgrade_preserves_records_and_is_idempotent(tmp_path):
     with second.connect() as db:
         assert list(map(tuple, db.execute('SELECT * FROM schema_migrations ORDER BY version'))) == before
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
-        assert {r[0] for r in before} == {1, 2, 3, 4, 5, 6}
+        assert {r[0] for r in before} == {1, 2, 3, 4, 5, 6, 7}
 
 
 def test_failed_migration_rolls_back_ddl_and_version(tmp_path):
@@ -29,7 +29,7 @@ def test_failed_migration_rolls_back_ddl_and_version(tmp_path):
         connection.execute('CREATE TABLE should_rollback(value TEXT)')
         raise ValueError('fail')
     with pytest.raises(ValueError), db:
-        migrate(db, (*MIGRATIONS, (7, 'broken', broken)))
+        migrate(db, (*MIGRATIONS, (8, 'broken', broken)))
     assert db.execute("SELECT name FROM sqlite_master WHERE name IN ('should_rollback','schema_migrations')").fetchall() == []
     db.close()
 
@@ -53,4 +53,4 @@ def test_concurrent_starts_apply_each_migration_once(tmp_path):
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(start, range(24)))
     with sqlite3.connect(tmp_path / 'shared.db') as db:
-        assert db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0] == 6
+        assert db.execute('SELECT count(*) FROM schema_migrations').fetchone()[0] == 7

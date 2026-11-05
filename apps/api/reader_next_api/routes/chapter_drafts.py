@@ -1,11 +1,14 @@
 """Store external chapter drafts independently of generated summaries."""
 import json
+from io import BytesIO
+from datetime import datetime, timezone
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pypdf import PdfReader
 from starlette.responses import Response
 
+from ..schemas import HighlightInput
 from ..chapter_drafts import DRAFT_TYPES, MAX_DRAFT_BYTES, DraftLink, validate_draft
 
 METADATA = "id,document_id,chapter_key,chapter_title,start_page,end_page,depth,filename,format,links,created_at"
@@ -118,5 +121,51 @@ def create_router(runtime):
     @router.delete("/{draft_id}/links/{link_id}")
     def delete_link(document_id: str, draft_id: str, link_id: str):
         return change_link(document_id, draft_id, link_id)
+
+
+    def load_ink(connection, document_id, draft_id):
+        row = connection.execute("SELECT format,data,ink FROM chapter_drafts WHERE document_id=? AND id=?",
+                                 (document_id, draft_id)).fetchone()
+        if row is None:
+            raise HTTPException(404, "导入稿不存在。")
+        if row["format"] != "pdf":
+            raise HTTPException(422, "仅 PDF 导入稿支持手写标注。")
+        return row
+
+    @router.get("/{draft_id}/ink")
+    def list_ink(document_id: str, draft_id: str):
+        with runtime.repository.connect() as connection:
+            row = load_ink(connection, document_id, draft_id)
+            return {"highlights": [{**item, "document_id": document_id} for item in json.loads(row["ink"])]}
+
+    @router.post("/{draft_id}/ink", status_code=201)
+    def add_ink(document_id: str, draft_id: str, payload: HighlightInput):
+        if not payload.rects or "__ink__" not in payload.tags:
+            raise HTTPException(422, "请选择有效的手写笔迹。")
+        with runtime.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = load_ink(connection, document_id, draft_id)
+            if payload.page_number > len(PdfReader(BytesIO(row["data"])).pages):
+                raise HTTPException(422, "标注页码超出总结 PDF 范围。")
+            strokes = json.loads(row["ink"])
+            if len(strokes) >= 50000:
+                raise HTTPException(422, "本份总结标注数量达到上限。")
+            item = {**payload.model_dump(), "id": str(uuid4()), "created_at": datetime.now(timezone.utc).isoformat()}
+            strokes.append(item)
+            connection.execute("UPDATE chapter_drafts SET ink=? WHERE document_id=? AND id=?",
+                               (json.dumps(strokes, ensure_ascii=False), document_id, draft_id))
+            return {"highlight": {**item, "document_id": document_id}}
+
+    @router.delete("/{draft_id}/ink/{stroke_id}", status_code=204)
+    def remove_ink(document_id: str, draft_id: str, stroke_id: str):
+        with runtime.repository.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = load_ink(connection, document_id, draft_id)
+            strokes = json.loads(row["ink"])
+            if not any(item["id"] == stroke_id for item in strokes):
+                raise HTTPException(404, "笔迹不存在。")
+            connection.execute("UPDATE chapter_drafts SET ink=? WHERE document_id=? AND id=?",
+                               (json.dumps([item for item in strokes if item["id"] != stroke_id], ensure_ascii=False),
+                                document_id, draft_id))
 
     return router

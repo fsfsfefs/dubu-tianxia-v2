@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from .schemas import HighlightInput
 from .chapter_drafts import DraftLink, validate_draft
 from .domain import ModelProfile
 from .compatibility import normalize_legacy_chapters
@@ -138,6 +139,18 @@ def inspect_book_backup(path, staging):
     for row in data["tables"]["chapter_drafts"]:
         try:
             validate_draft(row["format"], base64.b64decode(row["data"], validate=True))
+            strokes = json.loads(row.get("ink", "[]"))
+            if not isinstance(strokes, list) or len(strokes) > 50000:
+                raise ValueError("总结笔迹无效。")
+            stroke_ids = set()
+            for stroke in strokes:
+                parsed = HighlightInput.model_validate(stroke)
+                if not parsed.rects or "__ink__" not in parsed.tags:
+                    raise ValueError("总结笔迹无效。")
+                stroke_id = stroke.get("id")
+                if not isinstance(stroke_id, str) or not re.fullmatch(r"[0-9a-f-]{36}", stroke_id) or stroke_id in stroke_ids:
+                    raise ValueError("总结笔迹标识无效。")
+                stroke_ids.add(stroke_id)
             links = json.loads(row["links"])
             if not isinstance(links, list) or len(links) > 500:
                 raise ValueError("无效跳转。")

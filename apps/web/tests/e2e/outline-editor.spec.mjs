@@ -273,4 +273,35 @@ test('independent drafts preserve the summary, preview PDF and Word images, and 
  await expect(panel.getByLabel('查看章节总结')).toBeVisible();
  await expect(panel.getByLabel('查看总结版本')).toBeVisible();
  await expect(panel.getByLabel('导入稿缩放比例')).toHaveText('110%');
+ await page.getByTitle('在 PDF 上绘制标注').click();
+ await page.getByLabel('选择red标注色', {exact:true}).click();
+ const sharedTools = panel.getByRole('group', {name:'总结 PDF 标注工具'});
+ await expect(sharedTools.getByRole('button', {name:'画笔', exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(sharedTools.getByLabel('总结标注颜色')).toHaveValue('red');
+ const drafts = (await (await page.request.get(base + '/chapter-drafts')).json()).drafts;
+ const pdfDraft = drafts.find(item => item.filename === '对照稿.pdf');
+ const inkUrl = base + '/chapter-drafts/' + pdfDraft.id + '/ink';
+ const originalInk = (await (await page.request.get(base + '/highlights')).json()).highlights;
+ const draftBody = panel.locator('.chapter-draft-scroll');
+ await draftBody.evaluate(root => {root.scrollTop = 0;});
+ const bounds = await draftBody.boundingBox();
+ const client = await page.context().newCDPSession(page);
+ const draw = async () => {
+   const x = bounds.x + bounds.width * .25, y = bounds.y + bounds.height * .45;
+   await client.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',buttons:1,pointerType:'pen',force:.5});
+   await client.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:x+50,y:y+5,button:'left',buttons:1,pointerType:'pen',force:.5});
+   await client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:x+50,y:y+5,button:'left',buttons:0,pointerType:'pen',force:0});
+ };
+ await draw();
+ await expect.poll(async () => (await (await page.request.get(inkUrl)).json()).highlights.length).toBe(1);
+ expect((await (await page.request.get(base + '/highlights')).json()).highlights).toEqual(originalInk);
+ await sharedTools.getByRole('button',{name:'撤销总结标注'}).click();
+ await expect.poll(async () => (await (await page.request.get(inkUrl)).json()).highlights.length).toBe(0);
+ await draw();
+ await expect.poll(async () => (await (await page.request.get(inkUrl)).json()).highlights.length).toBe(1);
+ await client.detach();
+ await panel.getByLabel('查看总结版本').selectOption({label:'2. 带图稿.docx'});
+ await panel.getByLabel('查看总结版本').selectOption({label:'1. 对照稿.pdf'});
+ await expect(panel.locator('.annotation-stroke.red')).toHaveCount(1);
+
 });

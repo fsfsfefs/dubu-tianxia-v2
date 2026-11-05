@@ -18,6 +18,11 @@
 }
 .chapter-draft {display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid #d1d9cc;margin-bottom:12px}
 .chapter-draft > :is(header,.chapter-draft-controls,.chapter-draft-link-controls) {flex-shrink:0}
+.chapter-draft-reader {display:flex;flex-direction:column;min-height:0;flex:1}
+.chapter-draft-reader > :is(.chapter-draft-controls,.chapter-draft-link-controls) {flex-shrink:0}
+.chapter-draft-sheet .annotation-layer {z-index:5}
+.chapter-draft-controls input[type="range"] {width:65px}
+.chapter-draft-controls button[aria-pressed="true"] {background:#dcebd8;border-color:#62836c}
 .chapter-draft > header strong {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chapter-draft > header a {white-space:nowrap}
 .chapter-draft-zoom {padding-top:0}

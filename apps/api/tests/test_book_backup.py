@@ -226,3 +226,42 @@ def test_book_backup_roundtrips_chapter_drafts(tmp_path):
         assert row["data"] == text
         assert json.loads(row["links"]) == links
     assert target.list_chapter_summaries(document_id)[0]["content"] == "总结"
+
+def test_draft_pdf_ink_is_separate_and_survives_book_backup(tmp_path):
+    from io import BytesIO
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    writer.add_blank_page(width=600, height=800)
+    writer.add_blank_page(width=600, height=800)
+    stream = BytesIO()
+    writer.write(stream)
+    pdf = stream.getvalue()
+    with TestClient(create_app(tmp_path / "source")) as client:
+        repo = client.app.state.runtime.repository
+        doc = repo.add_document("原文.pdf", pdf)
+        url = f"/api/documents/{doc['id']}/chapter-drafts"
+        draft = client.post(url, data={"chapter_key": doc["id"] + ":ch-example", "chapter_title": "章", "start_page": 1, "depth": 0},
+                            files={"file": ("总结.pdf", pdf, "application/pdf")}).json()["draft"]
+        endpoint = f"{url}/{draft['id']}/ink"
+        payload = {"page_number": 2, "text": "笔迹", "color": "red", "comment": "", "tags": ["__ink__", "pen"],
+                   "rects": [{"x": .1, "y": .2, "width": .004, "height": .004}, {"x": .3, "y": .4, "width": .004, "height": .004}]}
+        saved = client.post(endpoint, json=payload)
+        assert saved.status_code == 201
+        stroke = saved.json()["highlight"]
+        assert client.get(endpoint).json()["highlights"] == [stroke]
+        assert repo.list_highlights(doc["id"]) == []
+        assert client.post(endpoint, json={**payload, "page_number": 3}).status_code == 422
+        assert client.get(endpoint.replace(doc["id"], "other-book")).status_code == 404
+        archive = tmp_path / "draft-ink.zip"
+        create_book_backup(repo, doc["id"], archive)
+        stage = tmp_path / "stage"
+        data = inspect_book_backup(archive, stage)
+        target = Repository(tmp_path / "target")
+        imported = install_book_backup(target, data, stage / "document.pdf")["document_id"]
+        with target.connect() as connection:
+            row = connection.execute("SELECT ink FROM chapter_drafts WHERE document_id=?", (imported,)).fetchone()
+            ink = json.loads(row["ink"])
+            assert ink[0]["rects"] == payload["rects"]
+            assert ink[0]["page_number"] == 2
+        assert client.delete(endpoint + "/" + stroke["id"]).status_code == 204
+        assert client.get(endpoint).json()["highlights"] == []

@@ -10,8 +10,14 @@ import {readAnnotationInput, saveAnnotationInput} from './annotationInput';
 import type {InkStyle} from './AnnotationLayer';
 const INK_TAG = '__ink__';
 const PENDING_INK_PREFIX = 'pending-ink-';
+type InkStorage = {create: typeof createHighlight; remove: typeof deleteHighlight};
+export type ReaderInkTools = Pick<ReturnType<typeof useAnnotations>,
+  'annotationTool' | 'annotationColor' | 'annotationWidth' | 'eraserSize' | 'penOnly' |
+  'setAnnotationTool' | 'setAnnotationColor' | 'setAnnotationWidth' | 'setEraserSize' | 'setPenOnly'>;
 
-export function useAnnotations(document: {id: string}, highlights: Highlight[], setHighlights: Dispatch<SetStateAction<Highlight[]>>, setError: (message: string) => void) {
+export function useAnnotations(document: {id: string}, highlights: Highlight[], setHighlights: Dispatch<SetStateAction<Highlight[]>>, setError: (message: string) => void, storage?: InkStorage) {
+  const create = storage?.create ?? createHighlight;
+  const remove = storage?.remove ?? deleteHighlight;
   const capture = useDocumentScope(document.id);
   const annotationUndoStack = useRef<AnnotationUndoAction[]>([]);
   const inkQueue = useRef(Promise.resolve());
@@ -50,7 +56,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     if (!selection) return;
     const valid = capture();
     try {
-      const highlight = await createHighlight(document.id, {page_number: selection.page, text: selection.text, rects: selection.rects, color: 'yellow', comment: '', tags: []});
+      const highlight = await create(document.id, {page_number: selection.page, text: selection.text, rects: selection.rects, color: 'yellow', comment: '', tags: []});
       if (!valid()) return;
       setHighlights(items => [...items, highlight]); onSaved();
     } catch (reason) {if (valid()) setError(reason instanceof Error ? reason.message : '保存高亮失败');}
@@ -79,7 +85,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const removeHighlight = async (item: Highlight) => {
     const valid = capture();
     try {
-      await deleteHighlight(document.id, item.id);
+      await remove(document.id, item.id);
       if (!valid()) return;
       setHighlights(items => items.filter(value => value.id !== item.id));
     } catch (reason) { if (valid()) setError(reason instanceof Error ? reason.message : '高亮删除失败'); }
@@ -91,7 +97,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     setAnnotationUndoDepth(annotationUndoStack.current.length);
   };
 
-  const createInkSegment = (page: number, rects: HighlightRect[], color: Highlight['color'], tags: string[], comment = '', text = `手写标注 · PDF 第 ${page} 页`) => createHighlight(document.id, {
+  const createInkSegment = (page: number, rects: HighlightRect[], color: Highlight['color'], tags: string[], comment = '', text = `手写标注 · PDF 第 ${page} 页`) => create(document.id, {
     page_number: page,
     text,
     rects,
@@ -147,9 +153,9 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
             const mark=marks.find(mark=>mark.members.some(member=>member.id===item.id));
             const tags=mark?regionTags(item.tags,mark.id):item.tags;
             for (const rects of segments) replacements.push(await createInkSegment(page, rects, item.color, tags, item.comment,item.text));
-            await deleteHighlight(document.id, item.id);
+            await remove(document.id, item.id);
           } catch (reason) {
-            await Promise.allSettled(replacements.map(value => deleteHighlight(document.id, value.id)));
+            await Promise.allSettled(replacements.map(value => remove(document.id, value.id)));
             throw reason;
           }
           if (!valid()) return;
@@ -171,7 +177,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
       const restored: Highlight[] = [];
       try {
         for (const item of action.removed || []) restored.push(await createInkSegment(item.page_number, item.rects, item.color, item.tags, item.comment,item.text));
-        await Promise.all(action.addedIds.map(id => deleteHighlight(document.id, id)));
+        await Promise.all(action.addedIds.map(id => remove(document.id, id)));
         if (!valid()) return;
         // Older undo entries refer to the original IDs, which restoration replaces.
         const ids = new Map((action.removed || []).map((item, index) => [item.id, restored[index].id]));
@@ -181,7 +187,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
           return [...remaining, ...restored];
         });
       } catch (reason) {
-        await Promise.allSettled(restored.map(item => deleteHighlight(document.id, item.id)));
+        await Promise.allSettled(restored.map(item => remove(document.id, item.id)));
         if (!valid()) return;
         annotationUndoStack.current.push(action);
         setAnnotationUndoDepth(annotationUndoStack.current.length);
@@ -224,11 +230,11 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const valid = capture();
     try {
       if (existing) {
-        await deleteHighlight(document.id, existing.id);
+        await remove(document.id, existing.id);
         if (!valid()) return;
       setHighlights(items => items.filter(item => item.id !== existing.id));
       } else {
-        const marker = await createHighlight(document.id, {
+        const marker = await create(document.id, {
           page_number: page, text: `整页星标 · PDF 第 ${page} 页`, rects: [], color: 'yellow', comment: '', tags: ['星标'],
         });
         if (!valid()) return;
@@ -238,7 +244,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   };
 
   useEffect(() => {
-    if (!annotationTool) return;
+    if (!annotationTool || storage) return;
     const handleUndoShortcut = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, [contenteditable="true"]')) return;

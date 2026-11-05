@@ -242,7 +242,13 @@ def _chapter_drafts(connection):
     connection.execute("CREATE INDEX IF NOT EXISTS chapter_drafts_document ON chapter_drafts(document_id)")
 
 
-MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images), (4, 'saved chats', _saved_chats), (5, 'flashcard explanations', _flashcard_explanations), (6, 'chapter drafts', _chapter_drafts))
+def _chapter_draft_ink(connection):
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(chapter_drafts)")}
+    if "ink" not in columns:
+        connection.execute("ALTER TABLE chapter_drafts ADD COLUMN ink TEXT NOT NULL DEFAULT '[]'")
+
+
+MIGRATIONS = ((1, 'baseline tables', _baseline), (2, 'legacy learning columns', _legacy_columns), (3, 'note images', _note_images), (4, 'saved chats', _saved_chats), (5, 'flashcard explanations', _flashcard_explanations), (6, 'chapter drafts', _chapter_drafts), (7, 'chapter draft ink', _chapter_draft_ink))
 
 
 def migrate(connection, migrations=MIGRATIONS):
