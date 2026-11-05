@@ -25,8 +25,8 @@ function rectStyle(rect: DraftRect): CSSProperties {
   return {left: rect.x * 100 + '%', top: rect.y * 100 + '%', width: rect.width * 100 + '%', height: rect.height * 100 + '%'};
 }
 
-export function DraftPdfSheet({pdf, number, aspect, visible, links, editing, rect, onAspect, onPlace, onJump}: {
-  pdf: PDFDocumentProxy; number: number; aspect: number; visible: boolean;
+export function DraftPdfSheet({pdf, number, aspect, renderWidth, visible, links, editing, rect, onAspect, onPlace, onJump}: {
+  pdf: PDFDocumentProxy; number: number; aspect: number; renderWidth: number; visible: boolean;
   links: DraftLink[]; editing: boolean; rect?: DraftRect;
   onAspect: (number: number, aspect: number) => void; onPlace: (rect: DraftRect) => void;
   onJump: (page: number, label: string) => void;
@@ -43,14 +43,15 @@ export function DraftPdfSheet({pdf, number, aspect, visible, links, editing, rec
       if (!live || !canvas.current) return;
       const base = page.getViewport({scale: 1});
       onAspect(number, base.width / base.height);
-      const viewport = page.getViewport({scale: Math.min(2, 2200 / Math.max(base.width, base.height))});
+      const pixels = renderWidth * (window.devicePixelRatio || 1);
+      const viewport = page.getViewport({scale: Math.min(pixels / base.width || 1, 3200 / Math.max(base.width, base.height))});
       canvas.current.width = Math.ceil(viewport.width);
       canvas.current.height = Math.ceil(viewport.height);
       render = page.render({canvas: canvas.current, viewport});
       return render.promise;
     }).catch(reason => {if (live) setError(reason instanceof Error ? reason.message : '无法预览此页。');});
     return () => {live = false; render?.cancel();};
-  }, [pdf, number, visible, onAspect]);
+  }, [pdf, number, visible, onAspect, renderWidth]);
 
   const drawing = editing && visible;
   const box = preview ?? rect;

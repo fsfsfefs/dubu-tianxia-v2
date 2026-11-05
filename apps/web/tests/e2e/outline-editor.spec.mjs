@@ -152,6 +152,32 @@ test('independent drafts preserve the summary, preview PDF and Word images, and 
  await expect(preview.getByLabel('导入稿页码')).toHaveValue('2');
  await mode.selectOption('scroll');
  const scroll = preview.getByLabel('滑动翻阅导入稿');
+ await scroll.scrollIntoViewIfNeeded();
+ const toolbar = preview.getByRole('group', {name:'导入稿缩放'});
+ const beforeScroll = await toolbar.boundingBox();
+ await scroll.evaluate(root => {root.scrollTop = 0;});
+ expect((await toolbar.boundingBox()).y).toBeCloseTo(beforeScroll.y, 0);
+ const percent = preview.getByLabel('导入稿缩放比例');
+ await toolbar.getByRole('button', {name:'放大导入稿'}).click();
+ await expect(percent).toHaveText('110%');
+ await expect.poll(() => scroll.evaluate(root => root.scrollWidth > root.clientWidth)).toBe(true);
+ await scroll.hover();
+ await page.keyboard.down('Control');
+ try {await page.mouse.wheel(0, -140);} finally {await page.keyboard.up('Control');}
+ await expect.poll(async () => parseInt(await percent.textContent(), 10)).toBeGreaterThan(110);
+ if (info.project.name === 'touch') {
+   const box = await scroll.boundingBox();
+   const x = box.x + box.width / 2, y = box.y + Math.min(box.height / 2, 100);
+   const initial = parseInt(await percent.textContent(), 10);
+   const cdp = await page.context().newCDPSession(page);
+   await cdp.send('Input.dispatchTouchEvent', {type:'touchStart', touchPoints:[{x:x-25,y,id:1},{x:x+25,y,id:2}]});
+   await cdp.send('Input.dispatchTouchEvent', {type:'touchMove', touchPoints:[{x:x-55,y,id:1},{x:x+55,y,id:2}]});
+   await cdp.send('Input.dispatchTouchEvent', {type:'touchEnd', touchPoints:[]});
+   await expect.poll(async () => parseInt(await percent.textContent(), 10)).toBeGreaterThan(initial);
+   await cdp.detach();
+ }
+ await toolbar.getByRole('button', {name:'适应宽度'}).click();
+ await expect(percent).toHaveText('100%');
  await scroll.evaluate(root => {root.scrollTop = 0;});
  await expect(preview.getByLabel('导入稿页码')).toHaveValue('1');
  await mode.selectOption('click');
@@ -185,6 +211,18 @@ test('independent drafts preserve the summary, preview PDF and Word images, and 
  await expect(frame.getByText('Word 排版正文', {exact:true})).toHaveCSS('font-weight', '700');
  await expect(frame.locator('td')).toContainText('Word 表格');
  await expect.poll(() => frame.locator('img').evaluate(img => img.naturalWidth)).toBe(1);
+ await preview.getByRole('button', {name:'放大导入稿'}).click();
+ await expect(preview.getByLabel('导入稿缩放比例')).toHaveText('110%');
+ await expect(frame.locator('td')).toContainText('Word 表格');
+ const wordViewport = preview.getByLabel('导入稿正文滚动区');
+ await wordViewport.scrollIntoViewIfNeeded();
+ const wordBox = await wordViewport.boundingBox();
+ await page.mouse.move(wordBox.x + 30, wordBox.y + 30);
+ await page.keyboard.down('Control');
+ try {await page.mouse.wheel(0, -100);} finally {await page.keyboard.up('Control');}
+ await expect.poll(async () => parseInt(await preview.getByLabel('导入稿缩放比例').textContent(), 10)).toBeGreaterThan(110);
+ await preview.getByRole('button', {name:'适应宽度'}).click();
+ await preview.getByRole('button', {name:'放大导入稿'}).click();
  const versions = page.getByLabel('查看总结版本');
  await expect(versions.locator('option')).toHaveCount(3);
  await versions.selectOption('');
@@ -207,4 +245,13 @@ test('independent drafts preserve the summary, preview PDF and Word images, and 
  await expect(page.getByLabel('PDF页码')).toHaveValue('1');
  await page.getByRole('button', {name:'↩ 返回章节总结'}).click();
  await expect(panel.getByRole('button', {name:'查看教材第一面'})).toBeVisible();
+ await expect(panel.getByLabel('导入稿缩放比例')).toHaveText('110%');
+ await panel.getByLabel('查看总结版本').selectOption({label:'1. 对照稿.pdf'});
+ const sideToolbar = panel.getByRole('group', {name:'导入稿缩放'});
+ const sideBody = panel.getByLabel('导入稿正文滚动区');
+ await sideToolbar.getByRole('button', {name:'放大导入稿'}).click();
+ const pinned = await sideToolbar.boundingBox();
+ await sideBody.evaluate(root => {root.scrollTop = 200;});
+ await expect.poll(() => sideBody.evaluate(root => root.scrollTop)).toBeGreaterThan(0);
+ expect((await sideToolbar.boundingBox()).y).toBeCloseTo(pinned.y, 0);
 });

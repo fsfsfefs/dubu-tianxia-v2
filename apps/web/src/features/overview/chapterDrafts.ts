@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useState, type SetStateAction} from 'react';
 
 export type DraftRect = {x: number; y: number; width: number; height: number};
 export type DraftLinkInput = {anchor: number; page: number; label: string; rect?: DraftRect};
@@ -19,6 +19,7 @@ async function result<T>(response: Response): Promise<T> {
 export function useChapterDrafts(documentId?: string) {
   const [snapshot, setSnapshot] = useState<{id?: string; items: ChapterDraft[]}>({items: []});
   const [error, setError] = useState('');
+  const [previewZooms, setPreviewZooms] = useState<Record<string, number>>({});
   const [previewPages, setPreviewPages] = useState<Record<string, number>>({});
   const [selection, setSelection] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -54,6 +55,9 @@ export function useChapterDrafts(documentId?: string) {
 
   return {
     drafts: snapshot.id === documentId ? snapshot.items : [], error, selection,
+    previewZooms, setPreviewZoom: (id: string, value: SetStateAction<number>) => setPreviewZooms(previous => ({
+      ...previous, [id]: typeof value === 'function' ? value(previous[id] ?? 1) : value,
+    })),
     previewPages, setPreviewPage: (id: string, page: number) => setPreviewPages(previous => ({...previous, [id]: page})),
     select: (key: string, id: string) => setSelection(previous => ({...previous, [key]: id})),
     async upload(scope: DraftScope, file: File) {

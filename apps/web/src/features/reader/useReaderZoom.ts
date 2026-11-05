@@ -10,7 +10,7 @@ type Anchor={page:number;x:number;y:number;client:Point};
 type PanStart={start:Point;scrollX:number;scrollY:number};
 type Contact=PanStart&{point:Point;delegate:boolean;dragging:boolean;lastMove:number;velocity:Point;horizontalOrigin:number|null;verticalExtent:number};
 type Session={kind:'wheel'|'touch';base:number;value:number;anchor:Anchor;center:Point;distance:number};
-type Options={documentId:string;enabled:boolean;zoom:number;setZoom:Dispatch<SetStateAction<number>>;root:RefObject<HTMLDivElement|null>;stage:RefObject<HTMLDivElement|null>;status:RefObject<HTMLOutputElement|null>;touchWrites:boolean;regionMode:boolean;onTouchGesture:()=>void};
+type Options={documentId:string;enabled:boolean;zoom:number;setZoom:Dispatch<SetStateAction<number>>;root:RefObject<HTMLDivElement|null>;stage:RefObject<HTMLDivElement|null>;status:RefObject<HTMLOutputElement|null>;touchWrites:boolean;regionMode:boolean;delegateTouch?:boolean;wheelStorageKey?:string;onTouchGesture:()=>void};
 function findAnchor(stage:HTMLElement,point:Point):Anchor|null{
  const hit=pageAtViewportY(stage,point.y,true);
  if(!hit)return null;const {page,bounds:box}=hit;
@@ -19,9 +19,10 @@ function findAnchor(stage:HTMLElement,point:Point):Anchor|null{
 export function useReaderZoom(options:Options){
  const config=useRef(options);config.current=options;
  const pending=useRef<Anchor|null>(null),reset=useRef<()=>void>(()=>{}),anchorFrame=useRef<number|null>(null);
- const [wheelDirect,setWheelDirect]=useState(()=>{try{return localStorage.getItem('reader-next-wheel-zoom')==='true';}catch{return false;}});
+ const wheelStorageKey=options.wheelStorageKey??'reader-next-wheel-zoom';
+ const [wheelDirect,setWheelDirect]=useState(()=>{try{return localStorage.getItem(wheelStorageKey)==='true';}catch{return false;}});
  const wheelSetting=useRef(wheelDirect);wheelSetting.current=wheelDirect;
- useEffect(()=>{try{localStorage.setItem('reader-next-wheel-zoom',String(wheelDirect));}catch{}},[wheelDirect]);
+ useEffect(()=>{try{localStorage.setItem(wheelStorageKey,String(wheelDirect));}catch{}},[wheelDirect,wheelStorageKey]);
  const clearPreview=useCallback(()=>{const stage=options.stage.current;if(stage){stage.style.transform='';stage.style.transformOrigin='';stage.style.willChange='';}if(options.root.current)delete options.root.current.dataset.zoomPreview;},[options.stage,options.root]);
  const restoreAnchor=useCallback((anchor:Anchor)=>{
   const root=options.root.current,page=root?.querySelector<HTMLElement>(`[data-page-number="${anchor.page}"]`);if(!root || !page)return;
@@ -127,7 +128,7 @@ export function useReaderZoom(options:Options){
    blockedTouches.delete(event.pointerId);
    if(session?.kind==='wheel')clear();
    const target=event.target instanceof Element?event.target:null;
-   const delegate=!!target?.closest('.region-capture') && config.current.regionMode || !!target?.closest('.annotation-layer.active') && config.current.touchWrites;
+   const delegate=!!target?.closest('.region-capture') && config.current.regionMode || !!target?.closest('.annotation-layer.active') && config.current.touchWrites || !!config.current.delegateTouch;
    const start=panFrom(event);
    contacts.set(event.pointerId,{...start,point:start.start,delegate,dragging:false,lastMove:event.timeStamp,velocity:{x:0,y:0},horizontalOrigin:null,verticalExtent:0});
    if(contacts.size>=2){

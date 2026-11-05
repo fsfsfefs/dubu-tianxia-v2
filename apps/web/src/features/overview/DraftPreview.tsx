@@ -1,9 +1,10 @@
-import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction} from 'react';
 import {getDocument, GlobalWorkerOptions, type PDFDocumentProxy} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {draftFile, type ChapterDraft, type DraftLink, type DraftLinkInput} from './chapterDrafts';
 
 import {pageAtViewportY} from '../reader/pageViewport';
+import {useReaderZoom} from '../reader/useReaderZoom';
 import {defaultDraftRect, DraftPdfSheet, draftLinkLabel} from './DraftPdfSheet';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -37,12 +38,16 @@ async function readHtml(format: ChapterDraft['format'], response: Response): Pro
   return {pages: [pre.outerHTML], styles: ''};
 }
 
-function HtmlPage({html, styles, word}: {html: string; styles: string; word: boolean}) {
+function HtmlPage({html, styles, word, zoom, onWheel}: {
+  html: string; styles: string; word: boolean; zoom: number; onWheel: (event: WheelEvent, frame: HTMLIFrameElement) => void;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const innerObserver = useRef<ResizeObserver | null>(null);
-  useEffect(() => () => innerObserver.current?.disconnect(), []);
+  const cleanup = useRef<() => void>(() => {});
+  const wheel = useRef(onWheel);
+  wheel.current = onWheel;
+  useEffect(() => () => cleanup.current(), []);
   const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
-  return <iframe ref={frame} title="导入稿正文" sandbox="allow-same-origin" className="chapter-draft-frame"
+  return <iframe ref={frame} style={{width: `${100 / zoom}%`, zoom}} title="导入稿正文" sandbox="allow-same-origin" className="chapter-draft-frame"
     srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>
       body{margin:0;color:#25382e;background:#fff;font:16px/1.65 system-ui,sans-serif;overflow-wrap:anywhere}
       .draft-text{padding:16px}pre{white-space:pre-wrap}img{max-width:100%}
@@ -52,7 +57,7 @@ function HtmlPage({html, styles, word}: {html: string; styles: string; word: boo
       .draft-docx-wrapper>section{margin:0!important;box-shadow:none!important}
       </style></head><body><main class="${word ? 'draft-docx-wrapper' : 'draft-text'}">${html}</main></body></html>`}
     onLoad={() => {
-      innerObserver.current?.disconnect();
+      cleanup.current();
       const iframe = frame.current;
       const body = iframe?.contentDocument?.body;
       const main = body?.firstElementChild as HTMLElement | null;
@@ -60,21 +65,36 @@ function HtmlPage({html, styles, word}: {html: string; styles: string; word: boo
       function resize() {
         if (!iframe?.clientWidth || !body || !main) return;
         const sheet = word ? main.firstElementChild as HTMLElement | null : null;
-        if (sheet?.offsetWidth) sheet.style.zoom = String(Math.min(1, iframe.clientWidth / sheet.offsetWidth));
-        iframe.style.height = `${Math.ceil(body.getBoundingClientRect().height) + 2}px`;
+        if (sheet?.offsetWidth) {
+          const fit = String(Math.min(1, iframe.clientWidth / sheet.offsetWidth));
+          if (sheet.style.zoom !== fit) sheet.style.zoom = fit;
+        }
+        const height = `${Math.ceil(body.getBoundingClientRect().height) + 2}px`;
+        if (iframe.style.height !== height) iframe.style.height = height;
       }
       resize();
-      const observer = new ResizeObserver(resize);
+      let resizeFrame = 0;
+      const observer = new ResizeObserver(() => {
+        if (!resizeFrame) resizeFrame = requestAnimationFrame(() => {resizeFrame = 0; resize();});
+      });
       observer.observe(body);
       observer.observe(iframe, {box: 'border-box'});
-      innerObserver.current = observer;
+      const listener = (event: WheelEvent) => wheel.current(event, iframe);
+      body.ownerDocument.addEventListener('wheel', listener, {passive: false});
+      cleanup.current = () => {
+        observer.disconnect();
+        if (resizeFrame) cancelAnimationFrame(resizeFrame);
+        body.ownerDocument.removeEventListener('wheel', listener);
+      };
     }}/>;
 }
 
-export default function DraftPreview({draft, page, setPage, onJump, onSave, onDelete}: {
+export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJump, onSave, onDelete}: {
   draft: ChapterDraft; page: number; setPage: (page: number) => void; onJump: (page: number, label: string) => void;
+  zoom: number; setZoom: Dispatch<SetStateAction<number>>;
   onSave: (link: DraftLinkInput, id?: string) => Promise<unknown>; onDelete: (id: string) => Promise<unknown>;
 }) {
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [pdf, setPdf] = useState<PDFDocumentProxy>();
   const [html, setHtml] = useState<HtmlPreview>();
   const [editor, setEditor] = useState<DraftLinkInput & {id?: string}>();
@@ -89,6 +109,21 @@ export default function DraftPreview({draft, page, setPage, onJump, onSave, onDe
   }, []);
   const scroller = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
+  const zoomStatus = useRef<HTMLOutputElement>(null);
+  const {changeZoom, wheelDirect, setWheelDirect} = useReaderZoom({
+    documentId: draft.id, enabled: Boolean(pdf || html), zoom, setZoom, root: scroller, stage, status: zoomStatus,
+    touchWrites: false, regionMode: false, delegateTouch: placing, wheelStorageKey: 'draft-wheel-zoom',
+    onTouchGesture: () => {if (placing) setPlacing(false);},
+  });
+  useLayoutEffect(() => {
+    const root = scroller.current;
+    if (!pdf || !root) return;
+    const resize = () => {if (root.clientWidth) setViewportWidth(root.clientWidth);};
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [pdf]);
   const pendingPage = useRef(page);
   const file = draftFile(draft);
   const format = draft.format;
@@ -134,6 +169,7 @@ export default function DraftPreview({draft, page, setPage, onJump, onSave, onDe
     if (target < 1 || target > total || !Number.isInteger(target)) return;
     pendingPage.current = target;
     if (scrolling) scrollToPage(target);
+    else if (scroller.current) scroller.current.scrollTop = 0;
     setPage(target);
   };
   const startEditor = (link?: DraftLink) => {
@@ -153,6 +189,7 @@ export default function DraftPreview({draft, page, setPage, onJump, onSave, onDe
     if (!pdf) return null;
     const isEditorPage = editor?.anchor === number;
     return <DraftPdfSheet key={number} pdf={pdf} number={number} aspect={aspects[number] ?? aspects[1] ?? 0.707}
+      renderWidth={viewportWidth * zoom}
       visible={!scrolling || Math.abs(current - number) <= 2} editing={Boolean(isEditorPage && placing && !busy)}
       rect={isEditorPage ? editor?.rect : undefined} links={draft.links.filter(link => link.anchor === number)}
       onAspect={storeAspect} onPlace={rect => {setEditor(previous => previous && {...previous, rect}); setPlacing(false);}} onJump={onJump}/>;
@@ -171,6 +208,14 @@ export default function DraftPreview({draft, page, setPage, onJump, onSave, onDe
         <button type="button" disabled={current >= total || busy || Boolean(editor)} onClick={() => changePage(current + 1)}>下一页</button></>}
       <button type="button" disabled={busy || Boolean(editor)} onClick={() => startEditor()}>添加教材页码跳转</button>
     </div>
+    <div className="chapter-draft-controls chapter-draft-zoom" role="group" aria-label="导入稿缩放">
+      <button type="button" aria-label="缩小导入稿" disabled={zoom <= .5} onClick={() => changeZoom(zoom - .1)}>−</button>
+      <span aria-label="导入稿缩放比例">{Math.round(zoom * 100)}%</span>
+      <button type="button" aria-label="放大导入稿" disabled={zoom >= 3} onClick={() => changeZoom(zoom + .1)}>＋</button>
+      <button type="button" onClick={() => changeZoom(1)}>适应宽度</button>
+      <label><input type="checkbox" checked={wheelDirect} onChange={event => setWheelDirect(event.target.checked)}/>滚轮缩放</label>
+    </div>
+    {(editor || links.length > 0 || linkError) && <div className="chapter-draft-link-controls">
     {editor && <form aria-label="教材页码跳转编辑" className="chapter-draft-controls chapter-draft-editor" onSubmit={event => {
       event.preventDefault();
       const {id, ...link} = editor;
@@ -199,14 +244,34 @@ export default function DraftPreview({draft, page, setPage, onJump, onSave, onDe
         <button type="button" disabled={busy || Boolean(editor)} onClick={() => void commit(() => onDelete(link.id))}>删除跳转</button>
       </div>)}
     </details>}
-    {scrolling ? <div className="chapter-draft-scroll" aria-label="滑动翻阅导入稿" ref={scroller} tabIndex={0}
-      onScroll={event => {
-        const root = event.currentTarget;
-        if (!stage.current || !root.clientHeight) return;
-        const point = root.getBoundingClientRect().top + root.clientHeight * .22;
-        const next = Number(pageAtViewportY(stage.current, point, true)?.page.dataset.pageNumber);
-        if (next && next !== current) setPage(next);
-      }}><div className="chapter-draft-stage" ref={stage}>{Array.from({length: total}, (_, index) => renderSheet(index + 1))}</div></div>
-      : pdf ? renderSheet(current) : html && <HtmlPage html={html.pages[current - 1]} styles={html.styles} word={format === 'docx'}/>}
+    </div>}
+    <div className="chapter-draft-viewport">
+      <div className="chapter-draft-scroll" data-pdf={Boolean(pdf)} aria-label={scrolling ? '滑动翻阅导入稿' : '导入稿正文滚动区'}
+        ref={scroller} tabIndex={0} onScroll={event => {
+          const root = event.currentTarget;
+          if (!scrolling || !stage.current || !root.clientHeight || root.dataset.zoomPreview) return;
+          const point = root.getBoundingClientRect().top + root.clientHeight * .22;
+          const next = Number(pageAtViewportY(stage.current, point, true)?.page.dataset.pageNumber);
+          if (next && next !== current) setPage(next);
+        }}>
+        <div className={`chapter-draft-stage${scrolling ? ' continuous' : ''}`} ref={stage}
+          style={{width: `${Math.max(1, zoom) * 100}%`, gridTemplateColumns: `${Math.min(1, zoom) * 100}%`}}>
+          {scrolling ? Array.from({length: total}, (_, index) => renderSheet(index + 1))
+            : pdf ? renderSheet(current) : html && <div className="chapter-draft-html" data-page-number={current}>
+              <HtmlPage html={html.pages[current - 1]} styles={html.styles} word={format === 'docx'} zoom={zoom} onWheel={(event, iframe) => {
+                if (!event.ctrlKey && !wheelDirect) return;
+                if (!scroller.current) return;
+                const frame = iframe.getBoundingClientRect();
+                event.preventDefault();
+                scroller.current.dispatchEvent(new WheelEvent('wheel', {
+                  ctrlKey: event.ctrlKey, deltaY: event.deltaY, deltaMode: event.deltaMode, cancelable: true,
+                  clientX: frame.left + event.clientX * zoom, clientY: frame.top + event.clientY * zoom,
+                }));
+              }}/>
+            </div>}
+        </div>
+      </div>
+      <output className="reader-zoom-status" ref={zoomStatus}/>
+    </div>
   </>;
 }
