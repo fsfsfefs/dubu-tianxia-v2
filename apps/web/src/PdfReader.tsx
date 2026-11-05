@@ -1,5 +1,6 @@
 import {useReaderZoom,pageContentTop} from './features/reader/useReaderZoom';
 import {joinRegionLines} from './features/reader/regionText';
+import {pageAtViewportY} from './features/reader/pageViewport';
 import {buildInkMarks} from './features/reader/inkMarks';
 import {InkMarkPanel} from './features/reader/InkMarkPanel';
 import {StickyNoteEditor,NoteImages} from './features/notes/StickyNoteEditor';
@@ -21,8 +22,10 @@ import {useAutoDismiss} from './useAutoDismiss';
 GlobalWorkerOptions.workerSrc = workerUrl;
 
 import {PdfThumbnail, ContinuousPdfPage, INK_TAG} from './PdfPages';
-import type {SelectionState, OutlineEntry, PageRegion, ReaderProps} from './PdfPages';
+import type {SelectionState, OutlineEntry, PageRegion, ReaderProps, ContinuousPageProps} from './PdfPages';
 export type {SourceTraceLocation, SourceTraceNavigation} from './PdfPages';
+const EMPTY_HIGHLIGHTS: Highlight[] = [];
+type PageHandlers = Pick<ContinuousPageProps, 'onMouseUp' | 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onAnnotationSave' | 'onAnnotationErase'>;
 export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onPageChange, onBack, onOpenGuide, onAssistantToggle, assistantOpen, notes = [], chapterSummaries = [], onCreatePageNote, onUpdatePageNote, onDeletePageNote, targetPage, targetPageRevision = 0, restoreLastPosition = true, sourceTrace, onSourceTraceNavigate, onSourceTraceReturn, onSourceTraceClose}: ReaderProps) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [initialPageDimensions, setInitialPageDimensions] = useState({width: 595, height: 842});
@@ -50,6 +53,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
   const [textSource, setTextSource] = useState<'native' | 'ocr' | 'none'>('none');
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
+  useEffect(() => setOcrProgress(null), [pageNumber]);
   const [copied, setCopied] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -275,30 +279,23 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
     scrollFrame.current = window.requestAnimationFrame(() => {
       scrollFrame.current = null;
       const scroller = scrollRef.current;
-      if (!scroller || scroller.dataset.zoomPreview==='true') return;
+      const stage = pagesRef.current;
+      if (!scroller || !stage || scroller.dataset.zoomPreview==='true') return;
       const rootBounds = scroller.getBoundingClientRect();
       // A stable reading line avoids two adjacent pages alternately becoming
       // the "largest visible" page while the user rests at their boundary.
       const focusY = rootBounds.top + Math.min(rootBounds.height * .42, 360);
-      let focusedPage = currentPageRef.current;
-      let focusedOffset = readingPositionRef.current.pageOffset;
-      let found = false;
-      scroller.querySelectorAll<HTMLElement>('[data-page-number]').forEach(element => {
-        if (found) return;
-        const bounds = element.getBoundingClientRect();
-        if (bounds.top <= focusY && bounds.bottom >= focusY) {
-          focusedPage = Number(element.dataset.pageNumber) || focusedPage;
-          focusedOffset = Math.max(0, Math.min((focusY - bounds.top) / Math.max(bounds.height, 1), 1));
-          found = true;
-        }
-      });
       // Keep the current page while the reading line is in the inter-page gap.
-      if (found && focusedPage !== currentPageRef.current) {
+      const hit = pageAtViewportY(stage, focusY);
+      if (!hit) return;
+      const focusedPage = Number(hit.page.dataset.pageNumber);
+      const focusedOffset = (focusY - hit.bounds.top) / Math.max(hit.bounds.height, 1);
+      if (focusedPage !== currentPageRef.current) {
         setPageNumber(focusedPage);
         setTextSource(pageSources.current.get(focusedPage) || 'none');
         setSelection(null);
       }
-      if (found) queueReadingPosition(focusedPage, focusedOffset);
+      queueReadingPosition(focusedPage, focusedOffset);
     });
   };
 
@@ -369,6 +366,30 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   };
 
   const normalizedHighlightQuery = highlightQuery.trim().toLocaleLowerCase();
+  const pageHighlights = useMemo(() => {
+    const byPage = new Map<number, Highlight[]>();
+    for (const highlight of highlights) {
+      const existing = byPage.get(highlight.page_number);
+      if (existing) existing.push(highlight);
+      else byPage.set(highlight.page_number, [highlight]);
+    }
+    return byPage;
+  }, [highlights]);
+  const handlers: PageHandlers = {
+    onMouseUp: captureSelection, onPointerDown: beginRegion, onPointerMove: moveRegion, onPointerUp: finishRegion,
+    onAnnotationSave: (page, points, style) => void saveInkAnnotation(page, points, style),
+    onAnnotationErase: (page, points, dimensions, radius, surface) => eraseInkAt(page, points, dimensions, radius, surface),
+  };
+  const latestHandlers = useRef(handlers);
+  latestHandlers.current = handlers;
+  const stablePageHandlers = useMemo<PageHandlers>(() => ({
+    onMouseUp: event => latestHandlers.current.onMouseUp(event),
+    onPointerDown: event => latestHandlers.current.onPointerDown(event),
+    onPointerMove: event => latestHandlers.current.onPointerMove(event),
+    onPointerUp: event => latestHandlers.current.onPointerUp(event),
+    onAnnotationSave: (...args) => latestHandlers.current.onAnnotationSave(...args),
+    onAnnotationErase: (...args) => latestHandlers.current.onAnnotationErase(...args),
+  }), []);
   const managedHighlights = highlights.filter(item => !item.tags?.includes(INK_TAG));
   const visibleHighlights = normalizedHighlightQuery ? managedHighlights.filter(item =>
     [item.text, item.comment, ...(item.tags || [])].join(' ').toLocaleLowerCase().includes(normalizedHighlightQuery),
@@ -483,30 +504,26 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
           pdf={pdf}
           documentId={document.id}
           pageNumber={continuousPage}
+          focused={continuousPage === pageNumber}
           zoom={zoom}
           initialDimensions={initialPageDimensions}
           scrollRoot={scrollRef}
-          highlights={highlights.filter(item => item.page_number === continuousPage)}
+          highlights={pageHighlights.get(continuousPage) || EMPTY_HIGHLIGHTS}
           regionMode={regionMode}
-          region={region}
+          region={region?.page === continuousPage ? region : null}
           annotationTool={annotationTool}
           annotationColor={annotationColor}
           annotationWidth={annotationWidth}
           eraserSize={eraserSize}
           penOnly={penOnly}
-          annotationDraft={annotationDraft}
+          annotationDraft={annotationDraft?.page === continuousPage ? annotationDraft : null}
           onAnnotationDraft={setAnnotationDraft}
-          onAnnotationSave={(page, points, style) => void saveInkAnnotation(page, points, style)}
-          onAnnotationErase={(page, points, dimensions, radius, surface) => eraseInkAt(page, points, dimensions, radius, surface)}
           pageTextCache={pageTextCache}
           ocrCache={ocrCache}
           onTextReady={handleTextReady}
           onOcrProgress={handleOcrProgress}
           onError={handlePageError}
-          onMouseUp={captureSelection}
-          onPointerDown={beginRegion}
-          onPointerMove={moveRegion}
-          onPointerUp={finishRegion}
+          {...stablePageHandlers}
         />;
       })}
       {tailSpace > 0 && <div aria-hidden="true" style={{height: tailSpace, flexShrink: 0}}/>}

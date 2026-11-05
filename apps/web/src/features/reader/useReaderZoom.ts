@@ -1,18 +1,18 @@
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import type {RefObject,Dispatch,SetStateAction} from 'react';
 import {penInContact} from './annotationInput';
+import {pageAtViewportY} from './pageViewport';
 export const clampZoom=(value:number)=>Math.max(.5,Math.min(3,Math.round(value*1000)/1000));
 export function pageContentTop(root:HTMLElement,page:HTMLElement){return page.getBoundingClientRect().top-root.getBoundingClientRect().top+root.scrollTop-root.clientTop;}
 type Point={x:number;y:number};
 type Anchor={page:number;x:number;y:number;client:Point};
 type PanStart={start:Point;scrollX:number;scrollY:number};
-type Contact=PanStart&{point:Point;delegate:boolean;dragging:boolean};
+type Contact=PanStart&{point:Point;delegate:boolean;dragging:boolean;lastMove:number;velocity:Point};
 type Session={kind:'wheel'|'touch';base:number;value:number;anchor:Anchor;center:Point;distance:number};
 type Options={documentId:string;enabled:boolean;zoom:number;setZoom:Dispatch<SetStateAction<number>>;root:RefObject<HTMLDivElement|null>;stage:RefObject<HTMLDivElement|null>;status:RefObject<HTMLOutputElement|null>;touchWrites:boolean;regionMode:boolean;onTouchGesture:()=>void};
-function findAnchor(root:HTMLElement,point:Point):Anchor|null{
- const pages=[...root.querySelectorAll<HTMLElement>('[data-page-number]')];
- const page=pages.sort((a,b)=>{const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();return Math.max(ar.top-point.y,point.y-ar.bottom,0)-Math.max(br.top-point.y,point.y-br.bottom,0);})[0];
- if(!page)return null;const box=page.getBoundingClientRect();
+function findAnchor(stage:HTMLElement,point:Point):Anchor|null{
+ const hit=pageAtViewportY(stage,point.y,true);
+ if(!hit)return null;const {page,bounds:box}=hit;
  return {page:Number(page.dataset.pageNumber),x:(point.x-box.left)/Math.max(1,box.width),y:(point.y-box.top)/Math.max(1,box.height),client:point};
 }
 export function useReaderZoom(options:Options){
@@ -34,20 +34,39 @@ export function useReaderZoom(options:Options){
  },[options.zoom,clearPreview,restoreAnchor]);
  const cancelZoom=useCallback(()=>{pending.current=null;if(anchorFrame.current!==null){cancelAnimationFrame(anchorFrame.current);anchorFrame.current=null;}reset.current();},[]);
  const changeZoom=useCallback((value:number)=>{
-  const root=options.root.current;if(!root)return;cancelZoom();
-  const box=root.getBoundingClientRect(),anchor=findAnchor(root,{x:box.left+root.clientWidth/2,y:box.top+root.clientHeight/2});
+  const root=options.root.current,stage=options.stage.current;if(!root || !stage)return;cancelZoom();
+  const box=root.getBoundingClientRect(),anchor=findAnchor(stage,{x:box.left+root.clientWidth/2,y:box.top+root.clientHeight/2});
   if(anchor)pending.current=anchor;config.current.setZoom(clampZoom(value));
- },[options.root,cancelZoom]);
+ },[options.root,options.stage,cancelZoom]);
  useEffect(()=>{
   const root=options.root.current,stage=options.stage.current;if(!root || !stage || !options.enabled)return;
   const contacts=new Map<number,Contact>(),pens=new Set<number>(),blockedTouches=new Set<number>();
   let mousePan:(PanStart&{id:number})|null=null;
+  let momentumFrame:number|null=null;
   let session:Session|null=null,locked=false,wheelTimer:ReturnType<typeof setTimeout>|undefined,statusTimer:ReturnType<typeof setTimeout>|undefined;
   const show=(value:number)=>{const status=options.status.current;if(!status)return;status.textContent=`${Math.round(value*100)}%`;status.dataset.visible='true';clearTimeout(statusTimer);statusTimer=setTimeout(()=>delete status.dataset.visible,750);};
-  const clear=()=>{clearTimeout(wheelTimer);session=null;clearPreview();};
+  const stopMomentum=()=>{if(momentumFrame!==null)cancelAnimationFrame(momentumFrame);momentumFrame=null;};
+  const clear=()=>{stopMomentum();clearTimeout(wheelTimer);session=null;clearPreview();};
+  const startMomentum=(velocity:Point)=>{
+   if(window.matchMedia('(prefers-reduced-motion: reduce)').matches || Math.hypot(velocity.x,velocity.y)<.14)return;
+   let {scrollLeft:x,scrollTop:y}=root;
+   let vx=velocity.x,vy=velocity.y,last=performance.now();
+   const step=(time:number)=>{
+    momentumFrame=null;
+    const elapsed=Math.max(0,Math.min(32,time-last));last=time;
+    const maxX=root.scrollWidth-root.clientWidth,maxY=root.scrollHeight-root.clientHeight;
+    const nextX=x+vx*elapsed,nextY=y+vy*elapsed;
+    x=Math.max(0,Math.min(maxX,nextX));y=Math.max(0,Math.min(maxY,nextY));
+    root.scrollLeft=x;root.scrollTop=y;
+    const decay=Math.exp(-elapsed/135);
+    vx=x===nextX?vx*decay:0;vy=y===nextY?vy*decay:0;
+    if(Math.hypot(vx,vy)>=.035)momentumFrame=requestAnimationFrame(step);
+   };
+   momentumFrame=requestAnimationFrame(step);
+  };
   reset.current=clear;
   const begin=(kind:Session['kind'],point:Point,distance=1)=>{
-   const anchor=findAnchor(root,point);if(!anchor)return null;
+   const anchor=findAnchor(stage,point);if(!anchor)return null;
    const bounds=stage.getBoundingClientRect();stage.style.transformOrigin=`${point.x-bounds.left}px ${point.y-bounds.top}px`;stage.style.willChange='transform';root.dataset.zoomPreview='true';
    session={kind,base:config.current.zoom,value:config.current.zoom,anchor,center:point,distance};return session;
   };
@@ -64,6 +83,7 @@ export function useReaderZoom(options:Options){
    show(current.value);
   };
   const wheel=(event:WheelEvent)=>{
+   stopMomentum();
    if(!event.ctrlKey && !wheelSetting.current)return;
    if(!event.deltaY)return;
    event.preventDefault();if(pens.size || contacts.size || mousePan)return;
@@ -93,6 +113,7 @@ export function useReaderZoom(options:Options){
    contacts.clear();
   };
   const down=(event:PointerEvent)=>{
+   stopMomentum();
    if(event.pointerType==='pen'){trackPen(event);return;}
    if(event.pointerType==='mouse' && event.button===2){
     stopEvent(event);
@@ -107,7 +128,7 @@ export function useReaderZoom(options:Options){
    const target=event.target instanceof Element?event.target:null;
    const delegate=!!target?.closest('.region-capture') && config.current.regionMode || !!target?.closest('.annotation-layer.active') && config.current.touchWrites;
    const start=panFrom(event);
-   contacts.set(event.pointerId,{...start,point:start.start,delegate,dragging:false});
+   contacts.set(event.pointerId,{...start,point:start.start,delegate,dragging:false,lastMove:event.timeStamp,velocity:{x:0,y:0}});
    if(contacts.size>=2){
     event.preventDefault();event.stopPropagation();cancelTouchDrawing();locked=true;
     for(const id of contacts.keys())capture(id);
@@ -125,6 +146,7 @@ export function useReaderZoom(options:Options){
    if(event.pointerType!=='touch')return;
    if(blockedTouches.has(event.pointerId) || pens.size || mousePan){stopEvent(event);return;}
    const contact=contacts.get(event.pointerId);if(!contact)return;
+   const previous=contact.point;
    contact.point={x:event.clientX,y:event.clientY};
    if(locked){
     event.preventDefault();event.stopPropagation();
@@ -135,6 +157,10 @@ export function useReaderZoom(options:Options){
     return;
    }
    if(contact.delegate)return;
+   const elapsed=Math.max(8,event.timeStamp-contact.lastMove);
+   const speed=(delta:number)=>Math.max(-2.8,Math.min(2.8,delta/elapsed));
+   contact.velocity={x:speed(previous.x-contact.point.x),y:speed(previous.y-contact.point.y)};
+   contact.lastMove=event.timeStamp;
    const dx=event.clientX-contact.start.x,dy=event.clientY-contact.start.y;
    if(!contact.dragging && Math.hypot(dx,dy)<5)return;
    if(!contact.dragging){contact.dragging=true;capture(event.pointerId);cancelTouchDrawing();window.getSelection()?.removeAllRanges();}
@@ -149,6 +175,7 @@ export function useReaderZoom(options:Options){
    if(locked || contact.dragging){event.preventDefault();event.stopPropagation();}
    contacts.delete(event.pointerId);
    if(session?.kind==='touch' && contacts.size<2){if(event.type==='pointercancel')clear();else finish();}
+   if(!locked && contact.dragging && event.type==='pointerup' && event.timeStamp-contact.lastMove<90)startMomentum(contact.velocity);
    if(!contacts.size)locked=false;
   };
   const blur=()=>{clear();stopMousePan();contacts.clear();blockedTouches.clear();pens.clear();locked=false;};

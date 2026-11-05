@@ -1,5 +1,5 @@
 import {marginInkForCanvas,inkSurface} from './features/reader/inkSurface';
-import {useEffect, useRef, useState} from 'react';
+import {memo, useEffect, useRef, useState} from 'react';
 import {GlobalWorkerOptions, PDFDocumentProxy, TextLayer} from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {saveOcrPage, type ChapterSummary, type DocumentRecord, type Highlight, type HighlightRect, type Note} from './api';
@@ -7,6 +7,7 @@ import './pdf-reader.css';
 import {AnnotationLayer, type InkStyle} from './features/reader/AnnotationLayer';
 import './features/reader/AnnotationLayer.css';
 import {OcrWord, recognizeCanvas} from './ocr';
+import {observeNearbyPage} from './features/reader/pageViewport';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -54,6 +55,7 @@ export type ContinuousPageProps = {
   pdf: PDFDocumentProxy;
   documentId: string;
   pageNumber: number;
+  focused: boolean;
   zoom: number;
   initialDimensions: {width: number; height: number};
   scrollRoot: React.RefObject<HTMLDivElement | null>;
@@ -135,7 +137,7 @@ export function PdfThumbnail({pdf, pageNumber, current, marked, scrollRoot, onSe
   </div>;
 }
 
-export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDimensions, scrollRoot, highlights, regionMode, region, annotationTool, annotationColor, annotationWidth, eraserSize, penOnly, annotationDraft, onAnnotationDraft, onAnnotationSave, onAnnotationErase, pageTextCache, ocrCache, onTextReady, onOcrProgress, onError, onMouseUp, onPointerDown, onPointerMove, onPointerUp}: ContinuousPageProps) {
+export const ContinuousPdfPage = memo(function ContinuousPdfPage({pdf, documentId, pageNumber, focused, zoom, initialDimensions, scrollRoot, highlights, regionMode, region, annotationTool, annotationColor, annotationWidth, eraserSize, penOnly, annotationDraft, onAnnotationDraft, onAnnotationSave, onAnnotationErase, pageTextCache, ocrCache, onTextReady, onOcrProgress, onError, onMouseUp, onPointerDown, onPointerMove, onPointerUp}: ContinuousPageProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -143,6 +145,7 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
   const [active, setActive] = useState(false);
   const [dimensions, setDimensions] = useState(initialDimensions);
   const [rendering, setRendering] = useState(false);
+  const [scan, setScan] = useState<{id: number; height: number} | null>(null);
   // Both axes scale with the same PDF zoom; viewport resizing never changes ink geometry.
   const marginWidth=dimensions.width*2*zoom;
 
@@ -150,12 +153,8 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
     const host = hostRef.current;
     const root = scrollRoot.current;
     if (!host || !root) return;
-    const observer = new IntersectionObserver(entries => {
-      setActive(entries.some(entry => entry.isIntersecting));
-    }, {root, rootMargin: `1400px ${marginWidth}px`, threshold: 0});
-    observer.observe(host);
-    return () => observer.disconnect();
-  }, [scrollRoot,marginWidth]);
+    return observeNearbyPage(root, host, setActive);
+  }, [scrollRoot]);
 
   useEffect(() => {
     if (!active || !canvasRef.current || !textLayerRef.current) return;
@@ -171,9 +170,9 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       const baseViewport = page.getViewport({scale: 1});
       const viewport = page.getViewport({scale: zoom});
       setDimensions({width: baseViewport.width, height: baseViewport.height});
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(viewport.width * ratio);
-      canvas.height = Math.floor(viewport.height * ratio);
+      const ratio = Math.min(window.devicePixelRatio || 1, Math.sqrt(8_000_000 / (viewport.width * viewport.height)));
+      canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
+      canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
       container.style.width = `${viewport.width}px`;
@@ -184,6 +183,7 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       pageRender=page.render({canvas, canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0]});
       await pageRender.promise;
       if (currentRender !== renderId.current) return;
+      setRendering(false);
       const textContent = await page.getTextContent();
       if (currentRender !== renderId.current) return;
       const nativeText = textContent.items.map(item => 'str' in item ? item.str : '').join(' ').trim();
@@ -191,44 +191,74 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
         pageTextLayer = new TextLayer({textContentSource: textContent, container, viewport});
         await pageTextLayer.render();
         if (currentRender !== renderId.current) return;
-        pageTextCache.current.set(pageNumber, nativeText);
-        void saveOcrPage(documentId, pageNumber, nativeText).catch(() => undefined);
+        if (pageTextCache.current.get(pageNumber) !== nativeText) {
+          pageTextCache.current.set(pageNumber, nativeText);
+          void saveOcrPage(documentId, pageNumber, nativeText).catch(() => undefined);
+        }
         onTextReady(pageNumber, nativeText, 'native');
       } else {
-        onOcrProgress(pageNumber, 0);
-        let words = ocrCache.current.get(pageNumber);
-        if (!words) {
-          words = await recognizeCanvas(canvas, progress => {if (currentRender === renderId.current) onOcrProgress(pageNumber, Math.round(progress * 100));});
-          if (currentRender !== renderId.current) return;
-          ocrCache.current.set(pageNumber, words);
-        }
-        if (currentRender !== renderId.current) return;
-        container.replaceChildren();
-        for (const word of words) {
-          const span = window.document.createElement('span');
-          span.className = 'ocr-word';
-          span.textContent = `${word.text} `;
-          span.style.left = `${word.bbox.x0 / canvas.width * 100}%`;
-          span.style.top = `${word.bbox.y0 / canvas.height * 100}%`;
-          span.style.width = `${(word.bbox.x1 - word.bbox.x0) / canvas.width * 100}%`;
-          span.style.height = `${(word.bbox.y1 - word.bbox.y0) / canvas.height * 100}%`;
-          span.style.fontSize = `${Math.max(6, (word.bbox.y1 - word.bbox.y0) / canvas.height * viewport.height)}px`;
-          container.append(span);
-        }
-        const recognizedText = words.map(word => word.text).join(' ');
-        pageTextCache.current.set(pageNumber, recognizedText);
-        void saveOcrPage(documentId, pageNumber, recognizedText).catch(() => undefined);
-        onTextReady(pageNumber, recognizedText, 'ocr');
+        setScan({id: currentRender, height: viewport.height});
       }
     }).catch(reason => {if (currentRender === renderId.current) onError(reason instanceof Error ? reason.message : `第 ${pageNumber} 页渲染失败`);})
       .finally(() => {
         if (currentRender === renderId.current) {
-          onOcrProgress(pageNumber, null);
           setRendering(false);
         }
       });
     return () => { renderId.current += 1; pageRender?.cancel(); pageTextLayer?.cancel(); };
-  }, [active, documentId, ocrCache, onError, onOcrProgress, onTextReady, pageNumber, pageTextCache, pdf, zoom]);
+  }, [active, documentId, onError, onTextReady, pageNumber, pageTextCache, pdf, zoom]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current, container = textLayerRef.current;
+    if (!active || !scan || scan.id !== renderId.current || !canvas || !container) return;
+    const cached = ocrCache.current.get(pageNumber);
+    if (!cached && !focused) return;
+    if (cached && container.firstChild) return;
+    const controller = new AbortController();
+    const valid = () => !controller.signal.aborted && scan.id === renderId.current;
+    const recognize = async () => {
+      try {
+        let words = cached;
+        if (!words) {
+          const {width, height} = canvas;
+          onOcrProgress(pageNumber, 0);
+          const result = await recognizeCanvas(canvas, progress => {
+            if (valid()) onOcrProgress(pageNumber, Math.round(progress * 100));
+          }, controller.signal);
+          if (!valid()) return;
+          words = result.map(({bbox, ...word}) => ({...word, bbox: {
+            x0: bbox.x0 / width, y0: bbox.y0 / height, x1: bbox.x1 / width, y1: bbox.y1 / height,
+          }}));
+          ocrCache.current.set(pageNumber, words);
+        }
+        const fragment = window.document.createDocumentFragment();
+        for (const {text, bbox} of words) {
+          const span = window.document.createElement('span');
+          span.className = 'ocr-word';
+          span.textContent = `${text} `;
+          span.style.left = `${bbox.x0 * 100}%`;
+          span.style.top = `${bbox.y0 * 100}%`;
+          span.style.width = `${(bbox.x1 - bbox.x0) * 100}%`;
+          span.style.height = `${(bbox.y1 - bbox.y0) * 100}%`;
+          span.style.fontSize = `${Math.max(6, (bbox.y1 - bbox.y0) * scan.height)}px`;
+          fragment.append(span);
+        }
+        container.replaceChildren(fragment);
+        const text = words.map(word => word.text).join(' ');
+        if (pageTextCache.current.get(pageNumber) !== text) {
+          pageTextCache.current.set(pageNumber, text);
+          void saveOcrPage(documentId, pageNumber, text).catch(() => undefined);
+        }
+        onTextReady(pageNumber, text, 'ocr');
+      } catch (reason) {
+        if (valid()) onError(reason instanceof Error ? reason.message : '页面 OCR 失败');
+      } finally {
+        if (valid()) onOcrProgress(pageNumber, null);
+      }
+    };
+    const timer = window.setTimeout(() => void recognize(), cached ? 0 : 180);
+    return () => {window.clearTimeout(timer); controller.abort(); onOcrProgress(pageNumber, null);};
+  }, [active, documentId, focused, ocrCache, onError, onOcrProgress, onTextReady, pageNumber, pageTextCache, scan, zoom]);
 
   const pageRegion = region?.page === pageNumber ? region.rect : null;
   const inkAnnotations = highlights.filter(item => item.tags?.includes(INK_TAG));
@@ -259,4 +289,4 @@ export function ContinuousPdfPage({pdf, documentId, pageNumber, zoom, initialDim
       {regionMode && !annotationTool && <div className="region-capture" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>{pageRegion && <span style={{left: `${pageRegion.x * 100}%`, top: `${pageRegion.y * 100}%`, width: `${pageRegion.width * 100}%`, height: `${pageRegion.height * 100}%`}}/>}</div>}
     </> : <div className="page-placeholder">PDF {pageNumber}</div>}
   </div>;
-}
+});

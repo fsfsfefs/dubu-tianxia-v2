@@ -63,7 +63,10 @@ test('touch pinch and one-finger pan work with pen-only mode and cancel unfinish
  await page.getByLabel('仅手写笔',{exact:true}).check();
  const root=page.locator('.pdf-scroll'),scroll=await root.evaluate(el=>({x:el.scrollLeft,y:el.scrollTop}));
  await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:450,y:500,id:1}]});
- await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:380,y:380,id:1}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:380,y:380,id:1}]});
+ const beforeLift=await root.evaluate(el=>el.scrollTop);
+ await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await expect.poll(()=>root.evaluate(el=>el.scrollTop)).toBeGreaterThan(beforeLift+8);
  await expect.poll(()=>root.evaluate(el=>el.scrollTop)).toBeGreaterThan(scroll.y+80);
  expect(await root.evaluate(el=>el.scrollLeft)).toBeGreaterThan(scroll.x+20);
  const oldZoom=await value(page);await pinch(session,450,500,100,70);await expect.poll(()=>value(page)).toBeLessThan(oldZoom);
