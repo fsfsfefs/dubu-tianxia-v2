@@ -99,3 +99,29 @@ test('input preferences persist locally and malformed sizes are clamped safely',
  localStorage.setItem('reader-next-v2-annotation-input','{"eraserSize":999,"penOnly":false}');assert.equal(readAnnotationInput().eraserSize,80);
  assert.equal(contactTool(pointer('mouse',1,0,0,2,2),'pen'),null);
 });
+
+test('pen details below one pixel are retained and long strokes keep their final point',()=>{
+ const t=setup({tool:'pen'});
+ fireEvent.pointerDown(t.layer,pointer('pen',2,100,100));
+ fireEvent.pointerMove(t.layer,pointer('pen',2,100.3,100));t.flush();
+ assert.ok(t.layer.querySelector('.draft').getAttribute('d').includes('167.166'));
+ for(let index=1;index<=1400;index++){
+  fireEvent.pointerMove(t.layer,pointer('pen',2,100+index*.3,100));
+ }
+ fireEvent.pointerUp(t.layer,pointer('pen',2,550,100,0));
+ assert.equal(t.saved.length,1);
+ const points=t.saved[0][1];
+ assert.ok(points.length<=1200);
+ assert.equal(points[0].x,100/600);
+ assert.equal(points.at(-1).x,550/600);
+});
+
+test('palm movement between strokes cannot restore the pen crosshair',()=>{
+ const t=setup({tool:'pen'});
+ fireEvent.pointerDown(t.layer,pointer('pen',2,100,100));
+ fireEvent.pointerUp(t.layer,pointer('pen',2,200,100,0));
+ fireEvent.pointerMove(t.layer,pointer('touch',3,300,200,0));
+ assert.equal(t.layer.dataset.pointerType,'pen');
+ fireEvent.pointerMove(t.layer,pointer('mouse',4,300,200,0));
+ assert.equal(t.layer.dataset.pointerType,'mouse');
+});

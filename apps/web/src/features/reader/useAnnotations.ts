@@ -9,6 +9,7 @@ import {eraseInk} from './eraseInk';
 import {readAnnotationInput, saveAnnotationInput} from './annotationInput';
 import type {InkStyle} from './AnnotationLayer';
 const INK_TAG = '__ink__';
+const PENDING_INK_PREFIX = 'pending-ink-';
 
 export function useAnnotations(document: {id: string}, highlights: Highlight[], setHighlights: Dispatch<SetStateAction<Highlight[]>>, setError: (message: string) => void) {
   const capture = useDocumentScope(document.id);
@@ -40,7 +41,11 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const [editingHighlight, setEditingHighlight] = useState<string | null>(null);
   const [highlightComment, setHighlightComment] = useState('');
   const [highlightTags, setHighlightTags] = useState('');
-  useEffect(() => {annotationUndoStack.current = []; setAnnotationUndoDepth(0); setAnnotationDraft(null); setEditingHighlight(null);}, [document.id]);
+  useEffect(() => {
+    annotationUndoStack.current = []; setAnnotationUndoDepth(0); setAnnotationDraft(null); setEditingHighlight(null);
+    setHighlights(items => items.some(item => item.id.startsWith(PENDING_INK_PREFIX))
+      ? items.filter(item => !item.id.startsWith(PENDING_INK_PREFIX)) : items);
+  }, [document.id]);
   const saveTextHighlight = async (selection: SelectionState, onSaved: () => void) => {
     if (!selection) return;
     const valid = capture();
@@ -98,18 +103,32 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
   const saveInkAnnotation = async (page: number, points: AnnotationPoint[], style?: InkStyle) => {
     const kind = style?.tool || (annotationTool === 'marker' ? 'marker' : 'pen');
     const width = style?.width ?? annotationWidth, color = style?.color ?? annotationColor;
-    const sampled = points.length <= 1200 ? points : points.filter((_, index) => index % Math.ceil(points.length / 1200) === 0).slice(0, 1200);
+    const sampled = points.length <= 1200 ? points : Array.from({length: 1200},
+      (_, index) => points[Math.round(index * (points.length - 1) / 1199)]);
+    const surface = style?.surface || 'page';
+    const rects = sampled.map(point => ({...point, width, height: width}));
+    const tags = regionTags([INK_TAG, kind, ...surfaceTags(surface), ...(surface === 'page' ? [] : [MARGIN_METRIC_TAG])], `page_${page}`);
+    const existing = buildInkMarks(currentHighlights.current).find(item => item.page === page);
+    const pending: Highlight = {
+      id: PENDING_INK_PREFIX + crypto.randomUUID(), document_id: document.id, page_number: page,
+      text: existing?.name || `手写标记 · PDF ${page}`, rects, color, tags, comment: '', created_at: new Date().toISOString(),
+    };
+    commitInk(items => [...items, pending]);
     const valid = capture();
     return enqueueInk(valid, async () => {
       try {
-        const marks=buildInkMarks(currentHighlights.current),surface=style?.surface || 'page';
+        const marks=buildInkMarks(currentHighlights.current.filter(item => !item.id.startsWith(PENDING_INK_PREFIX)));
         const mark=marks.find(item=>item.page===page);
-        const regionId=`page_${page}`;
-        const annotation = await createInkSegment(page, sampled.map(point => ({...point, width, height: width})), color, regionTags([INK_TAG, kind, ...surfaceTags(surface),...(surface==='page'?[]:[MARGIN_METRIC_TAG])],regionId),'',mark?.name || `手写标记 · PDF ${page}`);
+        const annotation = await createInkSegment(page, rects, color, tags, '', mark?.name || pending.text);
         if (!valid()) return;
-        commitInk(items => [...items, annotation]);
+        commitInk(items => items.map(item => item.id === pending.id ? annotation : item));
         pushAnnotationUndo({type: 'add', addedIds: [annotation.id]});
-      } catch (reason) { if (valid()) setError(reason instanceof Error ? reason.message : '标注保存失败'); }
+      } catch (reason) {
+        if (valid()) {
+          commitInk(items => items.filter(item => item.id !== pending.id));
+          setError(reason instanceof Error ? reason.message : '标注保存失败');
+        }
+      }
     });
   };
 
@@ -117,9 +136,9 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const valid = capture();
     return enqueueInk(valid, async () => {
       const removed: Highlight[] = [], addedIds: string[] = [];
-      const marks=buildInkMarks(currentHighlights.current);
+      const marks=buildInkMarks(currentHighlights.current.filter(item => !item.id.startsWith(PENDING_INK_PREFIX)));
       try {
-        for (const item of currentHighlights.current.filter(value => value.page_number === page && value.tags?.includes(INK_TAG) && inkSurface(value)===surface).map(marginInkForCanvas)) {
+        for (const item of currentHighlights.current.filter(value => !value.id.startsWith(PENDING_INK_PREFIX) && value.page_number === page && value.tags?.includes(INK_TAG) && inkSurface(value)===surface).map(marginInkForCanvas)) {
           const segments = eraseInk(item.rects, points, dimensions, radius);
           if (!segments) continue;
           const replacements: Highlight[] = [];
@@ -175,7 +194,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const valid=capture();
     return enqueueInk(valid,async()=>{
       try{
-        const current=buildInkMarks(currentHighlights.current).find(value=>value.id===mark.id);
+        const current=buildInkMarks(currentHighlights.current.filter(item => !item.id.startsWith(PENDING_INK_PREFIX))).find(value=>value.id===mark.id);
         if(!current)throw new Error('标记已变化，请重新选择。');
         const updated=await renameInkMark(document.id,current.members.map(item=>item.id),current.id,name.trim());
         if(!valid())return;
@@ -190,7 +209,7 @@ export function useAnnotations(document: {id: string}, highlights: Highlight[], 
     const valid=capture();
     return enqueueInk(valid,async()=>{
       try{
-        const current=buildInkMarks(currentHighlights.current).find(value=>value.id===mark.id);
+        const current=buildInkMarks(currentHighlights.current.filter(item => !item.id.startsWith(PENDING_INK_PREFIX))).find(value=>value.id===mark.id);
         if(!current)throw new Error('标记已变化，请重新选择。');
         const result=await deleteInkMark(document.id,current.members.map(item=>item.id),current.id);
         if(!valid())return;

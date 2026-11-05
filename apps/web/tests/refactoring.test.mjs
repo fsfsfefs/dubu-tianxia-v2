@@ -253,3 +253,43 @@ test('renaming a region survives erasing, undo and whole-region delete/undo',asy
  await act(async()=>{await hook.result.current.undoAnnotation();});
  assert.equal(stored.size,2);assert.equal(mark().name,'我的公式');assert.deepEqual(errors,[]);
 });
+
+test('rapid strokes stay visible while persistence waits and are replaced without duplicates',async()=>{
+ const {hook,stored,errors}=inkHarness();
+ const pending=deferred(),fetch=globalThis.fetch;
+ globalThis.fetch=(...args)=>pending.promise.then(()=>fetch(...args));
+ let first,second;
+ act(()=>{
+  first=hook.result.current.saveInkAnnotation(1,[{x:.1,y:.1},{x:.2,y:.2}]);
+  second=hook.result.current.saveInkAnnotation(1,[{x:.3,y:.3},{x:.4,y:.4}]);
+ });
+ assert.equal(hook.result.current.highlights.length,2);
+ const geometry=hook.result.current.highlights.map(item=>item.rects);
+ assert.equal(stored.size,0);
+ await act(async()=>{pending.resolve();await Promise.all([first,second]);});
+ assert.equal(stored.size,2);
+ assert.deepEqual(hook.result.current.highlights.map(item=>item.rects),geometry);
+ assert.ok(hook.result.current.highlights.every(item=>!item.id.startsWith('pending-ink-')));
+ assert.deepEqual(errors,[]);
+});
+
+test('an older erase does not erase a later stroke still waiting to save',async()=>{
+ const {hook,stored,errors}=inkHarness([ink('old')]);
+ await act(async()=>{
+  const erase=hook.result.current.eraseInkAt(1,[{x:.5,y:.2},{x:.5,y:.8}],pageSize);
+  const draw=hook.result.current.saveInkAnnotation(1,[{x:.4,y:.5},{x:.6,y:.5}]);
+  await Promise.all([erase,draw]);
+ });
+ assert.equal(stored.size,3);
+ assert.equal(hook.result.current.highlights.length,3);
+ assert.deepEqual(errors,[]);
+});
+
+test('a failed new stroke rolls back its temporary display and reports the failure',async()=>{
+ const {hook,stored,errors}=inkHarness([],()=>true);
+ await act(async()=>{await hook.result.current.saveInkAnnotation(1,[{x:.1,y:.1},{x:.2,y:.2}]);});
+ assert.equal(stored.size,0);
+ assert.deepEqual(hook.result.current.highlights,[]);
+ assert.equal(hook.result.current.annotationUndoDepth,0);
+ assert.equal(errors.length,1);
+});

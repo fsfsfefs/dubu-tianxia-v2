@@ -30,6 +30,7 @@ export function AnnotationLayer(props: Props) {
   const frame = useRef<number | null>(null);
   const revision = useRef(0), lastErase = useRef(0);
   const cursorRef = useRef<AnnotationPoint | null>(null);
+  const [liveDraft, setLiveDraft] = useState<AnnotationDraft | null>(null);
   const [cursor, setCursor] = useState<AnnotationPoint | null>(null);
   const [preview, setPreview] = useState<PreviewStroke[] | null>(null);
   const previewRef = useRef<PreviewStroke[] | null>(null);
@@ -37,7 +38,7 @@ export function AnnotationLayer(props: Props) {
   const clearPreview = () => {previewRef.current = null; setPreview(null);};
   const cancel = () => {
     const previous = gesture.current;
-    gesture.current = null; revision.current++; cancelFrame(); clearPreview(); onDraft(null);
+    gesture.current = null; revision.current++; cancelFrame(); clearPreview(); setLiveDraft(null); onDraft(null);
     if (previous && svg.current?.hasPointerCapture(previous.pointerId)) svg.current.releasePointerCapture(previous.pointerId);
   };
   useEffect(() => () => {cancel(); cursorRef.current = null; setCursor(null);}, [documentId, page, tool, zoom, dimensions.width, dimensions.height, eraserSize, penOnly, surface]);
@@ -49,8 +50,7 @@ export function AnnotationLayer(props: Props) {
     return()=>root?.removeEventListener('reader-touch-gesture',cancelTouch);
   },[documentId,page,tool]);
 
-  const pointAt = (event: {clientX: number; clientY: number}): AnnotationPoint => {
-    const box = svg.current!.getBoundingClientRect();
+  const pointAt = (event: {clientX: number; clientY: number}, box = svg.current!.getBoundingClientRect()): AnnotationPoint => {
     return {x: Math.max(0, Math.min(1, (event.clientX - box.left) / Math.max(1, box.width))), y: Math.max(0, Math.min(1, (event.clientY - box.top) / Math.max(1, box.height)))};
   };
   const advanceEraser = (current: Gesture) => {
@@ -68,14 +68,16 @@ export function AnnotationLayer(props: Props) {
       frame.current = null; setCursor(cursorRef.current);
       const current = gesture.current;
       if (current?.tool === 'eraser') advanceEraser(current);
-      else if (current) onDraft({page, points: [...current.points], ...(surface==='page'?{}:{surface})});
+      else if (current) setLiveDraft({page, points: [...current.points], ...(surface==='page'?{}:{surface})});
     });
   };
   const append = (current: Gesture, event: React.PointerEvent<SVGSVGElement>) => {
+    const box = svg.current!.getBoundingClientRect();
     const coalesced = event.nativeEvent.getCoalescedEvents?.() || [];
     for (const sample of [...coalesced, event.nativeEvent]) {
-      const point = pointAt(sample), last = current.points[current.points.length - 1];
-      if (Math.hypot(point.x - last.x, point.y - last.y) < .0007) continue;
+      const point = pointAt(sample, box), last = current.points[current.points.length - 1];
+      const distance = Math.hypot((point.x - last.x) * box.width, (point.y - last.y) * box.height);
+      if (distance < (current.pointerType === 'pen' ? .2 : .5)) continue;
       // Collinear eraser samples can be collapsed without losing the swept area.
       const previous = current.points[current.points.length - 2];
       if (current.tool === 'eraser' && previous && current.processed < current.points.length) {
@@ -83,21 +85,27 @@ export function AnnotationLayer(props: Props) {
         const bx = (point.x - last.x) * current.ratio, by = point.y - last.y;
         if (ax * bx + ay * by >= 0 && Math.abs(ax * by - ay * bx) < 1e-9) current.points.pop();
       }
-      if (current.tool === 'eraser' || current.points.length < 1200) current.points.push(point);
+      if (current.tool !== 'eraser' && current.points.length >= 1200) {
+        current.points = current.points.filter((_, index, points) => index % 2 === 0 || index === points.length - 1);
+      }
+      current.points.push(point);
     }
   };
   const start = (event: React.PointerEvent<SVGSVGElement>, selected: NonNullable<AnnotationTool>) => {
     event.currentTarget.focus({preventScroll: true});
     const box = svg.current!.getBoundingClientRect(), ratio = box.width / Math.max(1, box.height);
     const current: Gesture = {pointerId: event.pointerId, pointerType: event.pointerType, tool: selected,
-      points: [pointAt(event)], radius: eraserSize / (2 * Math.max(1, box.height)), ratio,
+      points: [pointAt(event, box)], radius: eraserSize / (2 * Math.max(1, box.height)), ratio,
       dimensions: {width: box.width, height: box.height}, processed: 0, revision: ++revision.current,
       lines: (previewRef.current || highlights.map(item => ({item, rects: item.rects}))).map(line => ({...line, rects: previewRef.current ? line.rects : flattenInk(line.rects, ratio)})),
       style: {tool: selected === 'marker' ? 'marker' : 'pen', color, width, ...(surface==='page'?{}:{surface})}};
     gesture.current = current;
     event.currentTarget.setPointerCapture(event.pointerId);
     if (selected === 'eraser') {lastErase.current = current.revision; advanceEraser(current);}
-    else onDraft({page, points: current.points, ...(surface==='page'?{}:{surface})});
+    else {
+      const started = {page, points: [...current.points], ...(surface==='page'?{}:{surface})};
+      setLiveDraft(started); onDraft(started);
+    }
   };
   const finish = (current: Gesture) => {
     cancelFrame(); gesture.current = null;
@@ -107,11 +115,13 @@ export function AnnotationLayer(props: Props) {
       void onErase(page, current.points, current.dimensions, current.radius).then(clear, clear);
     } else {
       if (current.points.length === 1) current.points.push({...current.points[0]});
-      onSave(page, current.points, current.style); onDraft(null);
+      onSave(page, current.points, current.style); setLiveDraft(null); onDraft(null);
     }
   };
   const observePen = (event: React.PointerEvent<SVGSVGElement>) => {
-    event.currentTarget.dataset.pointerType = gesture.current?.pointerType === 'pen' ? 'pen' : event.pointerType;
+    if (event.pointerType !== 'touch') {
+      event.currentTarget.dataset.pointerType = gesture.current?.pointerType === 'pen' ? 'pen' : event.pointerType;
+    }
     if (penInContact(event) && gesture.current?.pointerType === 'touch') cancel();
   };
   const down = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -143,7 +153,8 @@ export function AnnotationLayer(props: Props) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   const bounds = svg.current?.getBoundingClientRect();
-  const visibleDraft = draft?.page === page && (draft.surface || 'page')===surface ? draft : null;
+  const currentDraft = liveDraft || draft;
+  const visibleDraft = currentDraft?.page === page && (currentDraft.surface || 'page')===surface ? currentDraft : null;
   return <svg ref={svg} tabIndex={-1} aria-label={`PDF 第 ${page} 页${surface==='page'?'':surface==='left'?'左侧留白':'右侧留白'}标注`} className={`annotation-layer ${tool ? 'active' : ''} ${tool === 'eraser' ? 'eraser' : ''} ${cursor ? 'erasing-cursor' : ''}`}
     viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerEnter={observePen} onPointerDown={down} onPointerMove={move} onPointerUp={up}
     onPointerLeave={() => {if (!gesture.current) {cursorRef.current = null; setCursor(null);}}}
