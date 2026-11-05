@@ -160,8 +160,9 @@ export function useOverview({activeDocument, activeProfile, profiles, currentPag
     try {
       if (summaryModelLocked) throw new Error('请等待本书当前任务结束后再导入。');
       const raw = (await file.text()).trim();
-      const content = raw && target.refreshParent ? '【人工导入与拓展】\n' + raw : raw;
-      if (!content || content.length > 50000) throw new Error('请选择1至50000字的 Markdown 或 TXT 人工总结。');
+      const maxChars = target.refreshParent ? 300_000 : 50_000;
+      if (!raw || [...raw].length > maxChars) throw new Error(`请选择 1 至 ${maxChars} 字符的 Markdown 或 TXT 文件。`);
+      const content = target.refreshParent ? '【人工导入与拓展】\n' + raw : raw;
       if (!valid()) throw new Error('教材已切换，请重新选择要补充的章节。');
       const index = chapters.findIndex((_, i) => chapterKey(target.documentId, chapters, i) === target.gap.chapter_key);
       if (target.refreshParent && index < 0) throw new Error('章节目录已变化，请重新选择小章。');

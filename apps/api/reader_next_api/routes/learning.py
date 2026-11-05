@@ -13,7 +13,7 @@ from ..note_images import MAX_NOTE_IMAGES
 from ..providers import provider_error_message
 
 
-from ..schemas import ChapterSummaryInput, FlashcardGenerateInput, FlashcardInput, FlashcardReviewInput, FlashcardUpdateInput, HighlightInput, HighlightUpdateInput, LearningStructureImportInput, NoteInput, NoteUpdateInput, SummaryCheckpointInput
+from ..schemas import ChapterSummarySaveInput, FlashcardGenerateInput, FlashcardInput, FlashcardReviewInput, FlashcardUpdateInput, HighlightInput, HighlightUpdateInput, LearningStructureImportInput, NoteInput, NoteUpdateInput, SummaryCheckpointInput
 from ..runtime import Runtime
 
 
@@ -104,7 +104,7 @@ def create_router(runtime: Runtime) -> APIRouter:
             raise HTTPException(404, str(error)) from error
 
     @router.put('/api/documents/{document_id}/chapter-summaries/{chapter_key}')
-    def save_document_chapter_summary(document_id: str, chapter_key: str, payload: ChapterSummaryInput) -> dict:
+    def save_document_chapter_summary(document_id: str, chapter_key: str, payload: ChapterSummarySaveInput) -> dict:
         if payload.chapter_key != chapter_key:
             raise HTTPException(400, '章节标识不一致。')
         if payload.end_page < payload.start_page:

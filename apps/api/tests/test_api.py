@@ -32,6 +32,24 @@ def test_document_lifecycle_and_export(client):
     assert deleted.status_code == 204
 
 
+def test_imported_chapter_summary_accepts_300000_characters(client):
+    repository = client.app.state.runtime.repository
+    document = repository.add_document("chapter.pdf", b"%PDF-1.7\nfixture")
+    url = f"/api/documents/{document['id']}/chapter-summaries"
+    content = "【人工导入与拓展】\n" + "书📖" * 150_000
+    payload = {
+        "chapter_key": "chapter", "title": "小章", "start_page": 1,
+        "end_page": 2, "depth": 1, "content": content,
+    }
+
+    saved = client.put(f"{url}/chapter", json=payload)
+    assert saved.status_code == 200
+    assert saved.json()["summary"]["content"] == content
+    assert client.put(f"{url}/chapter", json={**payload, "content": content + "书"}).status_code == 422
+    assert client.put(f"{url}/chapter", json={**payload, "content": "书" * 50_001}).status_code == 422
+    assert repository.list_chapter_summaries(document["id"])[0]["content"] == content
+
+
 def test_manual_flashcard_and_review_api(client):
     repository = client.app.state.runtime.repository
     document = repository.add_document("chapter.pdf", b"%PDF-1.7\nfixture")

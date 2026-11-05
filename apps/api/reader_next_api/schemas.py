@@ -91,13 +91,32 @@ class OcrPageInput(BaseModel):
     text: str = Field(default="", max_length=100000)
 
 
+MAX_CHAPTER_SUMMARY_CHARS = 50_000
+MAX_IMPORTED_CHAPTER_CHARS = 300_000
+IMPORTED_CHAPTER_PREFIX = "【人工导入与拓展】\n"
+
+
 class ChapterSummaryInput(BaseModel):
     chapter_key: str = Field(min_length=1, max_length=500)
     title: str = Field(min_length=1, max_length=500)
     start_page: int = Field(ge=1)
     end_page: int = Field(ge=1)
     depth: int = Field(ge=0, le=20)
-    content: str = Field(min_length=1, max_length=50000)
+    content: str = Field(min_length=1, max_length=MAX_CHAPTER_SUMMARY_CHARS)
+
+
+class ChapterSummarySaveInput(ChapterSummaryInput):
+    content: str = Field(min_length=1, max_length=MAX_IMPORTED_CHAPTER_CHARS + len(IMPORTED_CHAPTER_PREFIX))
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value):
+        if value.startswith(IMPORTED_CHAPTER_PREFIX):
+            if not value.removeprefix(IMPORTED_CHAPTER_PREFIX).strip():
+                raise ValueError("导入的小章内容不能为空。")
+        elif len(value) > MAX_CHAPTER_SUMMARY_CHARS:
+            raise ValueError(f"章节总结最多 {MAX_CHAPTER_SUMMARY_CHARS} 字符。")
+        return value
 
 
 class OutlineEntryInput(BaseModel):
