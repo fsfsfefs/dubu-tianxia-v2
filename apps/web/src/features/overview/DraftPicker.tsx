@@ -3,8 +3,8 @@ import {draftFile, type ChapterDrafts, type DraftScope} from './chapterDrafts';
 
 const DraftPreview = lazy(() => import('./DraftPreview'));
 
-export function DraftPicker({model, chapterKey, scope, onJump, children}: {
-  model: ChapterDrafts; chapterKey: string; scope?: DraftScope;
+export function DraftPicker({model, chapterKey, scope, onJump, children, toolsCollapsed}: {
+  model: ChapterDrafts; chapterKey: string; scope?: DraftScope; toolsCollapsed?: boolean;
   onJump: (page: number, label: string) => void; children: ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
@@ -32,7 +32,7 @@ export function DraftPicker({model, chapterKey, scope, onJump, children}: {
     </div>}
     {draft ? <section className="chapter-draft" aria-label="导入稿预览">
       <header><strong>{draft.filename}</strong><a href={draftFile(draft)} download={draft.filename}>下载原文件</a></header>
-      <Suspense fallback={<p role="status">正在加载导入稿预览…</p>}><DraftPreview key={draft.id} draft={draft} page={model.previewPages[draft.id] || 1} setPage={page => model.setPreviewPage(draft.id, page)} zoom={model.previewZooms[draft.id] ?? 1} setZoom={value => model.setPreviewZoom(draft.id, value)} onJump={onJump} onSave={(link, id) => model.saveLink(draft, link, id)} onDelete={id => model.deleteLink(draft, id)}/></Suspense>
+      <Suspense fallback={<p role="status">正在加载导入稿预览…</p>}><DraftPreview key={draft.id} draft={draft} toolsCollapsed={toolsCollapsed} page={model.previewPages[draft.id] || 1} setPage={page => model.setPreviewPage(draft.id, page)} zoom={model.previewZooms[draft.id] ?? 1} setZoom={value => model.setPreviewZoom(draft.id, value)} onJump={onJump} onSave={(link, id) => model.saveLink(draft, link, id)} onDelete={id => model.deleteLink(draft, id)}/></Suspense>
     </section> : children}
   </>;
 }

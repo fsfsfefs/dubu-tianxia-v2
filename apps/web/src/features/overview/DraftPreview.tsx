@@ -89,9 +89,9 @@ function HtmlPage({html, styles, word, zoom, onWheel}: {
     }}/>;
 }
 
-export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJump, onSave, onDelete}: {
+export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJump, onSave, onDelete, toolsCollapsed}: {
   draft: ChapterDraft; page: number; setPage: (page: number) => void; onJump: (page: number, label: string) => void;
-  zoom: number; setZoom: Dispatch<SetStateAction<number>>;
+  zoom: number; setZoom: Dispatch<SetStateAction<number>>; toolsCollapsed?: boolean;
   onSave: (link: DraftLinkInput, id?: string) => Promise<unknown>; onDelete: (id: string) => Promise<unknown>;
 }) {
   const [viewportWidth, setViewportWidth] = useState(0);
@@ -112,7 +112,7 @@ export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJum
   const zoomStatus = useRef<HTMLOutputElement>(null);
   const {changeZoom, wheelDirect, setWheelDirect} = useReaderZoom({
     documentId: draft.id, enabled: Boolean(pdf || html), zoom, setZoom, root: scroller, stage, status: zoomStatus,
-    touchWrites: false, regionMode: false, delegateTouch: placing, wheelStorageKey: 'draft-wheel-zoom',
+    touchWrites: false, regionMode: false, delegateTouch: placing && !toolsCollapsed, wheelStorageKey: 'draft-wheel-zoom',
     onTouchGesture: () => {if (placing) setPlacing(false);},
   });
   useLayoutEffect(() => {
@@ -190,8 +190,8 @@ export default function DraftPreview({draft, page, setPage, zoom, setZoom, onJum
     const isEditorPage = editor?.anchor === number;
     return <DraftPdfSheet key={number} pdf={pdf} number={number} aspect={aspects[number] ?? aspects[1] ?? 0.707}
       renderWidth={viewportWidth * zoom}
-      visible={!scrolling || Math.abs(current - number) <= 2} editing={Boolean(isEditorPage && placing && !busy)}
-      rect={isEditorPage ? editor?.rect : undefined} links={draft.links.filter(link => link.anchor === number)}
+      visible={!scrolling || Math.abs(current - number) <= 2} editing={Boolean(isEditorPage && placing && !busy && !toolsCollapsed)}
+      rect={isEditorPage && !toolsCollapsed ? editor?.rect : undefined} links={draft.links.filter(link => link.anchor === number)}
       onAspect={storeAspect} onPlace={rect => {setEditor(previous => previous && {...previous, rect}); setPlacing(false);}} onJump={onJump}/>;
   }
   return <>
