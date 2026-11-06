@@ -5,6 +5,8 @@ import {buildInkMarks} from './features/reader/inkMarks';
 import {InkMarkPanel} from './features/reader/InkMarkPanel';
 import {StickyNoteEditor,NoteImages} from './features/notes/StickyNoteEditor';
 import {OutlineEditor} from './features/outline/OutlineEditor';
+import {useSummaryWidth} from './features/reader/useSummaryWidth';
+import type {CSSProperties} from 'react';
 import {ReaderSummaries} from './features/reader/ReaderSummaries';
 import {usePdfSearch} from './features/reader/usePdfSearch';
 import {useAnnotations} from './features/reader/useAnnotations';
@@ -42,6 +44,8 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   const [toolbarCollapsed,setToolbarCollapsed]=useState(()=>{try{return localStorage.getItem('reader-next-toolbar-collapsed')==='true';}catch{return false;}});
   useEffect(()=>{try{localStorage.setItem('reader-next-toolbar-collapsed',String(toolbarCollapsed));}catch{}},[toolbarCollapsed]);
   const [sidebarMode, setSidebarMode] = useState<'pages' | 'outline' | 'summary' | null>(null);
+  const summaryHost = useRef<HTMLDivElement>(null);
+  const summaryResize = useSummaryWidth(summaryHost, sidebarMode === 'summary');
   const [summaryReturn, setSummaryReturn] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
   const [paperTone, setPaperTone] = useState(false);
@@ -405,7 +409,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
   };
 
 
-  return <div data-zoom={zoom.toFixed(3)} className={`pdf-reader original-reader ${toolbarCollapsed?'toolbar-is-collapsed':''} ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
+  return <div ref={summaryHost} style={{'--summary-panel-width': `${summaryResize.width}px`} as CSSProperties} data-zoom={zoom.toFixed(3)} className={`pdf-reader original-reader ${toolbarCollapsed?'toolbar-is-collapsed':''} ${paperTone ? 'paper-tone' : ''} ${sidebarMode ? 'side-panel-open' : ''} ${sidebarMode === 'summary' ? 'summary-panel-open' : ''} ${notePanelOpen ? 'note-panel-open' : ''}`}>
     {outlineEditorOpen && <OutlineEditor documentId={document.id} onClose={()=>setOutlineEditorOpen(false)} onSaved={setOutline}/>}
     <div ref={toolbarRef} className="reader-toolbar original-toolbar">
       <div className="reader-book-heading">
@@ -474,7 +478,7 @@ export function PdfReader({document, onExcerpt, onRegionExcerpt, onAiAssist, onP
       <header><nav><button className={sidebarMode === 'pages' ? 'active' : ''} aria-selected={sidebarMode === 'pages'} onClick={() => setSidebarMode('pages')}>页面</button><button className={sidebarMode === 'outline' ? 'active' : ''} aria-selected={sidebarMode === 'outline'} onClick={() => setSidebarMode('outline')}>目录</button><button onClick={() => setSidebarMode('summary')}>总结</button></nav><span>{sidebarMode === 'pages' ? `${pageNumber} / ${pdf.numPages}` : `${outline.length} 项`}</span><button className="side-panel-collapse" aria-label="收起页面与目录导航" onClick={() => setSidebarMode(null)}>‹</button></header>
       {sidebarMode === 'pages' ? <div className="thumbnail-list" ref={thumbnailListRef}>{Array.from({length: pdf.numPages}, (_, index) => <PdfThumbnail key={index + 1} pdf={pdf} pageNumber={index + 1} current={pageNumber === index + 1} marked={highlights.some(item => item.page_number === index + 1 && item.rects.length === 0)} scrollRoot={thumbnailListRef} onSelect={changePage} onToggleMark={page => void togglePageMark(page)}/>)}</div> : <div className="side-outline-list"><button onClick={()=>setOutlineEditorOpen(true)}>{outline.length ? '编辑 / 校对目录' : 'AI生成 / 人工编写目录'}</button>{outline.map((item, index) => <button key={`${item.title}-${index}`} style={{paddingLeft: `${12 + item.depth * 14}px`}} aria-current={item.page === pageNumber ? 'page' : undefined} onClick={() => changePage(item.page)}><span>{item.title}</span><small>{item.page}</small></button>)}{!outline.length && <p>原文没有电子目录，可用AI生成草稿并人工校对。</p>}</div>}
     </aside>}
-    {pdf && <ReaderSummaries key={document.id} active={sidebarMode === 'summary'} page={pageNumber} summaries={chapterSummaries} draftModel={draftModel} inkTools={{annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly}} onClose={() => setSidebarMode(null)} onPages={() => setSidebarMode('pages')} onOutline={() => setSidebarMode('outline')} onJump={page => {setSummaryReturn(true); changePage(page); setSidebarMode(null);}}/>}
+    {pdf && <ReaderSummaries key={document.id} active={sidebarMode === 'summary'} resize={summaryResize} page={pageNumber} summaries={chapterSummaries} draftModel={draftModel} inkTools={{annotationTool, setAnnotationTool, annotationColor, setAnnotationColor, annotationWidth, setAnnotationWidth, eraserSize, setEraserSize, penOnly, setPenOnly}} onClose={() => setSidebarMode(null)} onPages={() => setSidebarMode('pages')} onOutline={() => setSidebarMode('outline')} onJump={page => {setSummaryReturn(true); changePage(page); setSidebarMode(null);}}/>}
     {notePanelOpen && <aside className="reader-note-panel" aria-label="页边便签">
       <header><div><small>PDF 第 {pageNumber} 页</small><strong>页边便签</strong></div><button aria-label="关闭便签栏" onClick={() => setNotePanelOpen(false)}>×</button></header>
       <StickyNoteEditor key={`${document.id}-${pageNumber}`} onSave={async(content,files)=>{if(onCreatePageNote)await onCreatePageNote(pageNumber,content,files);}}/>

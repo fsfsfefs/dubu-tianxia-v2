@@ -2,12 +2,13 @@ import {useLayoutEffect, useRef, useState} from 'react';
 import type {ChapterSummary} from '../../api';
 import {DraftPicker} from '../overview/DraftPicker';
 import type {ChapterDrafts} from '../overview/chapterDrafts';
+import type {SummaryPanelResize} from './useSummaryWidth';
 import type {ReaderInkTools} from './useAnnotations';
 import {SummaryContent} from '../../StructuredContent';
 
-type Props = {active: boolean; page: number; summaries: ChapterSummary[]; draftModel?: ChapterDrafts; inkTools?: ReaderInkTools; onJump: (page: number) => void; onClose: () => void; onPages: () => void; onOutline: () => void};
+type Props = {active: boolean; page: number; summaries: ChapterSummary[]; draftModel?: ChapterDrafts; inkTools?: ReaderInkTools; resize?: SummaryPanelResize; onJump: (page: number) => void; onClose: () => void; onPages: () => void; onOutline: () => void};
 function historical(key: string) {return !key.endsWith(':__book__') && !key.includes(':ch-');}
-export function ReaderSummaries({active, page, summaries, draftModel, inkTools, onJump, onClose, onPages, onOutline}: Props) {
+export function ReaderSummaries({active, page, summaries, draftModel, inkTools, resize, onJump, onClose, onPages, onOutline}: Props) {
   const [selectedKey, setSelectedKey] = useState('');
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -48,5 +49,15 @@ export function ReaderSummaries({active, page, summaries, draftModel, inkTools, 
       {selected && draftModel ? <DraftPicker key={selected.chapter_key} model={draftModel} inkTools={inkTools}
         chapterKey={selected.chapter_key} onJump={jump} toolsCollapsed={toolsCollapsed}>{content}</DraftPicker> : content}
     </div>
+    {resize && <div className="reader-summary-resizer" role="separator" aria-label="调整总结面板宽度" aria-orientation="vertical"
+      aria-valuemin={resize.minimum} aria-valuemax={resize.maximum} aria-valuenow={resize.width} tabIndex={0}
+      title="左右拖动调整宽度，双击恢复默认" onPointerDown={resize.begin} onDoubleClick={resize.reset}
+      onKeyDown={event => {
+        const targets: Record<string, number> = {
+          ArrowLeft: resize.width - 16, ArrowRight: resize.width + 16, Home: resize.minimum, End: resize.maximum,
+        };
+        if (event.key in targets) {event.preventDefault(); resize.resize(targets[event.key]);}
+        if (event.key === 'Enter') {event.preventDefault(); resize.reset();}
+      }}><span/></div>}
   </aside>;
 }

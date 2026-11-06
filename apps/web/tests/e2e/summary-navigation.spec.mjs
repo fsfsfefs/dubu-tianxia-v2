@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-test('summary references jump to PDF page top and return to the same chapter and button',async({page})=>{
+test('summary references jump to PDF page top and return to the same chapter and button',async({page}, info)=>{
  const docs=(await (await page.request.get('/api/documents')).json()).documents;
  const book=docs.find(d=>d.title==='E2E Native');
  const outline=[{title:'第一章测试',page:1,depth:0},{title:'第二章测试',page:2,depth:0}];
@@ -32,6 +32,32 @@ test('summary references jump to PDF page top and return to the same chapter and
  await expect(page.locator('.page-controls input')).toHaveValue('1');
  await page.getByRole('button',{name:'↩ 返回章节总结',exact:true}).click();
  await expect(panel).toBeVisible();
+ const grip = panel.getByRole('separator', {name:'调整总结面板宽度'});
+ const originalWidth = (await panel.boundingBox()).width;
+ const gripBox = await grip.boundingBox();
+ if (info.project.name === 'touch') {
+  const client = await page.context().newCDPSession(page);
+  const x=gripBox.x+gripBox.width/2,y=gripBox.y+80;
+  await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+  await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+150,y,id:1}]});
+  await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await client.detach();
+ } else {
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(gripBox.x + gripBox.width / 2 + 150, gripBox.y + 80, {steps:8});
+  await page.mouse.up();
+ }
+ await expect.poll(async () => (await panel.boundingBox()).width).toBeCloseTo(originalWidth + 150, 0);
+ const wide = (await panel.boundingBox()).width;
+ expect(Number(await page.evaluate(() => localStorage.getItem('reader-summary-panel-width')))).toBeCloseTo(wide, 0);
+ await grip.focus(); await grip.press('ArrowLeft');
+ await expect.poll(async () => (await panel.boundingBox()).width).toBeCloseTo(wide - 16, 0);
+ await panel.getByRole('button',{name:'关闭章节总结'}).click();
+ await page.getByRole('button',{name:'章节总结',exact:true}).click();
+ await expect.poll(async () => (await panel.boundingBox()).width).toBeCloseTo(wide - 16, 0);
+ await grip.dblclick({position:{x:4,y:80}});
+ await expect.poll(async () => (await panel.boundingBox()).width).toBeCloseTo(420, 0);
  await panel.getByRole('button',{name:'关闭章节总结'}).click();
  for(const width of [1440,1180,900,640]){
   await page.setViewportSize({width,height:1000});
